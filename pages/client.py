@@ -25,40 +25,50 @@ from app.modules.alerts import get_alert_color, get_alert_label
 init_db()
 
 # ===============================
-# GPS FIX - Handle query params as lists
+# GPS - LECTURE DES COORDONNEES
 # ===============================
+# Quand le JS recharge la page avec ?lat=X&lon=Y, on lit ici
 query = st.query_params
+has_gps_from_url = False
+
 if "lat" in query and "lon" in query:
     try:
-        # st.query_params returns lists, not single values
-        lat_raw = query.get("lat", ["0"])
-        lon_raw = query.get("lon", ["0"])
-        # Extract first element if list
-        lat_str = lat_raw[0] if isinstance(lat_raw, (list, tuple)) else str(lat_raw)
-        lon_str = lon_raw[0] if isinstance(lon_raw, (list, tuple)) else str(lon_raw)
-        st.session_state.gps_lat = float(lat_str)
-        st.session_state.gps_lon = float(lon_str)
-        st.session_state.gps_loaded = True
-    except (ValueError, IndexError, TypeError):
-        st.session_state.gps_lat = 0.0
-        st.session_state.gps_lon = 0.0
-        st.session_state.gps_loaded = False
-    # Clear query params and reload clean URL
-    st.query_params.clear()
-    st.rerun()
+        lat_raw = query.get("lat")
+        lon_raw = query.get("lon")
+        # Streamlit peut retourner string ou liste
+        if isinstance(lat_raw, list):
+            lat_raw = lat_raw[0]
+        if isinstance(lon_raw, list):
+            lon_raw = lon_raw[0]
+        parsed_lat = float(str(lat_raw))
+        parsed_lon = float(str(lon_raw))
+        if parsed_lat != 0.0 and parsed_lon != 0.0:
+            st.session_state.gps_lat = parsed_lat
+            st.session_state.gps_lon = parsed_lon
+            st.session_state.gps_loaded = True
+            has_gps_from_url = True
+    except (ValueError, TypeError):
+        pass
 
-# Default session state
+# Init session state
 if "gps_lat" not in st.session_state:
     st.session_state.gps_lat = 0.0
 if "gps_lon" not in st.session_state:
     st.session_state.gps_lon = 0.0
 if "gps_loaded" not in st.session_state:
     st.session_state.gps_loaded = False
+if "alert_sent" not in st.session_state:
+    st.session_state.alert_sent = False
+if "alert_id" not in st.session_state:
+    st.session_state.alert_id = None
 
-# Use session state values
+# Valeurs finales (session_state peut avoir ete mis a jour par le JS reload)
 lat_input = st.session_state.gps_lat
 lon_input = st.session_state.gps_lon
 
+# ===============================
+# STYLES
+# ===============================
 st.markdown("""
 <style>
     @keyframes pulse-ring {
@@ -156,14 +166,6 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 2px;
     }
-    .gps-status-ok {
-        color: #00ff88;
-        font-size: 0.8rem;
-    }
-    .gps-status-wait {
-        color: #FF8800;
-        font-size: 0.8rem;
-    }
     .status-ok {
         background: linear-gradient(135deg, #0a2a0a 0%, #1a3a1a 100%);
         border: 1px solid #00ff44;
@@ -197,9 +199,6 @@ st.markdown("""
         color: #4B8BFF;
         text-decoration: none;
     }
-    .footer-co a:hover {
-        color: #FF4B4B;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -226,7 +225,7 @@ st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
 # === GPS LOCALISATION ===
 st.markdown('<div class="section-label-blue">2. Localisation GPS</div>', unsafe_allow_html=True)
 
-# Geolocation button - JS reloads page with query params
+# Geolocation - JS reloads page with ?lat=X&lon=Y query params
 geo_html = """
 <div class="gps-box">
     <button onclick="getGPS()" style="
@@ -250,61 +249,59 @@ geo_html = """
 function getGPS() {
     const s = document.getElementById('geo-status');
     if (!navigator.geolocation) { s.innerHTML = '<span style="color:#ff4444">Geolocalisation non supportee</span>'; return; }
-    s.innerHTML = '<span style="color:#4B8BFF"> Acquisition satellites... Veuillez patienter</span>';
+    s.innerHTML = '<span style="color:#4B8BFF"> Acquisition satellites... Patientez</span>';
     navigator.geolocation.getCurrentPosition(
         function(p) {
-            const lat = p.coords.latitude.toFixed(6);
-            const lon = p.coords.longitude.toFixed(6);
-            const acc = Math.round(p.coords.accuracy);
+            var lat = p.coords.latitude.toFixed(6);
+            var lon = p.coords.longitude.toFixed(6);
+            var acc = Math.round(p.coords.accuracy);
             s.innerHTML = '<span style="color:#00ff88">✓ POSITION ACQUISE</span><br>' +
                 '<span style="color:#aaa">LAT: ' + lat + ' | LON: ' + lon + ' | ACC: ±' + acc + 'm</span><br>' +
                 '<span style="color:#4B8BFF; font-size:0.75rem;">Chargement...</span>';
-            // Build URL preserving Streamlit params
-            const url = new URL(window.location.href);
-            // Remove existing lat/lon
-            url.searchParams.delete('lat');
-            url.searchParams.delete('lon');
-            // Add new values
-            url.searchParams.set('lat', lat);
-            url.searchParams.set('lon', lon);
-            window.location.href = url.toString();
+            // Reload page with GPS coords in URL (Streamlit reads query_params on next load)
+            var base = window.location.pathname;
+            var params = new URLSearchParams(window.location.search);
+            params.set('lat', lat);
+            params.set('lon', lon);
+            window.location.href = base + '?' + params.toString();
         },
         function(e) {
-            let m='Erreur GPS. ';
-            if(e.code==1) m+='Permission refusee par le navigateur.';
-            else if(e.code==2) m+='Signal GPS indisponible.';
-            else if(e.code==3) m+='Delai depasse. Reessayez.';
+            var m='Erreur GPS. ';
+            if(e.code==1) m+='Permission refusee.';
+            else if(e.code==2) m+='Signal indisponible.';
+            else if(e.code==3) m+='Delai depasse.';
             s.innerHTML = '<span style="color:#ff4444">' + m + '</span>';
         },
-        {enableHighAccuracy:true, timeout:15000, maximumAge:0}
+        {enableHighAccuracy:true, timeout:20000, maximumAge:0}
     );
 }
 </script>
 """
 st.components.v1.html(geo_html, height=140)
 
-# Display loaded coordinates
+# Affichage coords chargees
 if st.session_state.gps_loaded and lat_input != 0.0 and lon_input != 0.0:
-    st.success(f"✓ Position chargee : LAT {lat_input:.6f} | LON {lon_input:.6f}")
+    st.success(f"✓ GPS charge : {lat_input:.6f}, {lon_input:.6f}")
 else:
-    st.info("📍 Cliquez sur le bouton ci-dessus pour localiser votre position")
+    st.info("📍 Cliquez sur 'Localiser ma position' ou saisissez manuellement")
 
-# Manual fallback
-st.markdown("<p style='color:#444; font-size:0.7rem; text-align:center; margin:0.5rem 0;'>Saisie manuelle (si GPS echoue) :</p>", unsafe_allow_html=True)
+# Saisie manuelle fallback
+st.markdown("<p style='color:#444; font-size:0.7rem; text-align:center; margin:0.5rem 0;'>Saisie manuelle :</p>", unsafe_allow_html=True)
 c1, c2 = st.columns(2)
 with c1:
     manual_lat = st.number_input("LATITUDE", value=lat_input, format="%.6f", step=0.000001, key="manual_lat")
 with c2:
     manual_lon = st.number_input("LONGITUDE", value=lon_input, format="%.6f", step=0.000001, key="manual_lon")
 
-# Update session state with manual values
-if manual_lat != lat_input or manual_lon != lon_input:
+# Sync manual input to session_state
+if manual_lat != lat_input:
     st.session_state.gps_lat = manual_lat
-    st.session_state.gps_lon = manual_lon
     lat_input = manual_lat
+if manual_lon != lon_input:
+    st.session_state.gps_lon = manual_lon
     lon_input = manual_lon
 
-# Coords display boxes
+# Display coords boxes
 co1, co2, co3 = st.columns(3)
 with co1:
     st.markdown(f'<div class="gps-box"><div class="gps-label">LATITUDE</div><div class="gps-coord">{lat_input:.6f}</div></div>', unsafe_allow_html=True)
@@ -323,23 +320,17 @@ st.markdown('<div class="section-label-blue">3. Details (optionnels)</div>', uns
 desc = st.text_area("", placeholder="Decrivez la situation en cours...", height=70, key="desc_field", label_visibility="collapsed")
 phone = st.text_input("Tel contact (optionnel)", placeholder="+225 XX XX XX XX", key="phone_field")
 
-# Session state
-if 'alert_sent' not in st.session_state:
-    st.session_state.alert_sent = False
-if 'alert_id' not in st.session_state:
-    st.session_state.alert_id = None
-
-has_valid = validate_coordinates(lat_input, lon_input)
-
 # === EMERGENCY BUTTON ===
 st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 st.markdown('<div class="section-label">4. Envoyer l\'alerte</div>', unsafe_allow_html=True)
 
+has_valid = validate_coordinates(lat_input, lon_input)
+
 # Visual rings
 st.markdown("""
-<div style="position:relative; width:260px; height:260px; margin:1rem auto; display:flex; align-items:center; justify-content:center;">
-    <div style="position:absolute; width:100%; height:100%; border-radius:50%; border:3px solid rgba(255,0,0,0.2); animation:pulse-ring 2.5s infinite;"></div>
-    <div style="position:absolute; width:100%; height:100%; border-radius:50%; border:2px solid rgba(255,0,0,0.15); animation:pulse-ring2 2.5s infinite;"></div>
+<div style="position:relative; width:260px; height:100px; margin:0 auto; display:flex; align-items:center; justify-content:center;">
+    <div style="position:absolute; width:200px; height:200px; border-radius:50%; border:3px solid rgba(255,0,0,0.2); animation:pulse-ring 2.5s infinite;"></div>
+    <div style="position:absolute; width:200px; height:200px; border-radius:50%; border:2px solid rgba(255,0,0,0.15); animation:pulse-ring2 2.5s infinite;"></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -360,6 +351,8 @@ if st.button("ALERTE\nURGENCE", key="big_red_btn", type="primary", disabled=not 
                 )
                 st.session_state.alert_sent = True
                 st.session_state.alert_id = aid
+                st.session_state.alert_lat = lat_input
+                st.session_state.alert_lon = lon_input
                 time.sleep(1.5)
             except Exception as e:
                 st.error(f"ERREUR TRANSMISSION: {str(e)}")
@@ -398,7 +391,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if not has_valid:
-    st.warning("⚠️ Appuyez sur 'Localiser ma position' ou saisissez les coordonnees GPS avant d'envoyer.")
+    st.warning("⚠️ Localisez-vous ou saisissez les coordonnees GPS avant d'envoyer.")
 
 # === SUCCESS ===
 if st.session_state.alert_sent:
@@ -413,13 +406,22 @@ if st.session_state.alert_sent:
     </div>
     """, unsafe_allow_html=True)
     st.info("Restez calme. Trouvez un endroit sur. Gardez votre telephone allume. La police a recu votre position exacte.")
+    
+    # BOUTON: Voir le trajet de la police
+    if st.button("🗺 VOIR LE TRAJET DE LA POLICE", type="secondary", use_container_width=True):
+        st.switch_page("pages/trajet.py")
+    
     if st.button("NOUVELLE ALERTE", type="secondary"):
-        st.session_state.alert_sent = False
-        st.session_state.alert_id = None
-        st.session_state.gps_lat = 0.0
-        st.session_state.gps_lon = 0.0
-        st.session_state.gps_loaded = False
-        st.query_params.clear()
+        for key in ['alert_sent', 'alert_id', 'alert_lat', 'alert_lon', 'gps_lat', 'gps_lon', 'gps_loaded']:
+            if key in st.session_state:
+                if key in ['gps_lat', 'gps_lon']:
+                    st.session_state[key] = 0.0
+                elif key == 'gps_loaded':
+                    st.session_state[key] = False
+                elif key in ['alert_lat', 'alert_lon']:
+                    st.session_state[key] = 0.0
+                else:
+                    st.session_state[key] = False if key == 'alert_sent' else None
         st.rerun()
 
 st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
@@ -427,10 +429,8 @@ st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 if st.button("← RETOUR ACCUEIL", key="back_home"):
     st.switch_page("streamlit_app.py")
 
-# Footer
 st.markdown("""
 <div class="footer-co">
-    <b>MutuAlert</b> &copy; 2026 | Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> | Tous droits reserves<br>
-    <span style="color:#333;">Securite civique en temps reel</span>
+    <b>MutuAlert</b> &copy; 2026 | Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> | Tous droits reserves
 </div>
 """, unsafe_allow_html=True)

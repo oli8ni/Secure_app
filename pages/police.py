@@ -34,11 +34,6 @@ st.markdown("""
         0%, 100% { border-color: rgba(255,0,0,0.3); }
         50% { border-color: rgba(255,0,0,0.9); }
     }
-    @keyframes pulse-dot {
-        0% { r: 8; opacity: 0.8; }
-        50% { r: 20; opacity: 0.2; }
-        100% { r: 8; opacity: 0.8; }
-    }
     .cc-header {
         background: linear-gradient(90deg, #0a0a1a 0%, #1a1a3a 50%, #0a0a1a 100%);
         border-bottom: 2px solid #1a1a4a;
@@ -167,8 +162,12 @@ st.markdown("""
         color: #4B8BFF;
         text-decoration: none;
     }
-    .footer-co a:hover {
-        color: #FF4B4B;
+    .upload-box {
+        background: linear-gradient(145deg, #0d0d1a, #141428);
+        border: 1px solid #1a1a3a;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -264,6 +263,10 @@ df_alerts = get_all_alerts(200)
 if show_status != "all":
     df_alerts = df_alerts[df_alerts['status'] == show_status]
 
+# Zoom state
+if 'zoom_to' not in st.session_state:
+    st.session_state.zoom_to = None
+
 # Metrics
 m1, m2, m3, m4 = st.columns(4)
 active_count = len(df_alerts[df_alerts['status'] == 'active'])
@@ -288,25 +291,51 @@ left, right = st.columns([3, 2])
 with left:
     st.markdown("<div style='color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:0.5rem;'>🗺 Carte Temps Reel</div>", unsafe_allow_html=True)
     
-    if len(df_alerts) > 0:
+    # Upload GeoJSON
+    with st.expander("📁 Charger centres de police (GeoJSON)"):
+        geojson_file = st.file_uploader("Fichier .geojson", type=['geojson', 'json'])
+        police_stations = []
+        if geojson_file:
+            try:
+                geojson_data = json.load(geojson_file)
+                if 'features' in geojson_data:
+                    for feat in geojson_data['features']:
+                        if feat.get('geometry', {}).get('type') == 'Point':
+                            coords = feat['geometry']['coordinates']
+                            name = feat.get('properties', {}).get('name', f"Poste {len(police_stations)+1}")
+                            police_stations.append({'name': name, 'lon': coords[0], 'lat': coords[1]})
+                st.success(f"{len(police_stations)} centres de police charges")
+            except Exception as e:
+                st.error(f"Erreur lecture GeoJSON: {e}")
+    
+    # Determine center
+    if st.session_state.zoom_to and len(df_alerts) > 0:
+        z_alert = df_alerts[df_alerts['id'] == st.session_state.zoom_to]
+        if len(z_alert) > 0:
+            center_lat = z_alert.iloc[0]['latitude']
+            center_lon = z_alert.iloc[0]['longitude']
+            zoom_level = 16
+        else:
+            center_lat = df_alerts['latitude'].mean() if len(df_alerts) > 0 else 5.3600
+            center_lon = df_alerts['longitude'].mean() if len(df_alerts) > 0 else -4.0083
+            zoom_level = 13
+    elif len(df_alerts) > 0:
         center_lat = df_alerts['latitude'].mean()
         center_lon = df_alerts['longitude'].mean()
+        zoom_level = 13
     else:
-        center_lat, center_lon = 5.3600, -4.0083  # Abidjan default
+        center_lat, center_lon = 5.3600, -4.0083
+        zoom_level = 13
     
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=13, tiles="CartoDB dark_matter")
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_level, tiles="CartoDB dark_matter")
     
-    # Enhanced blinking CSS injected into map
+    # Pulsing CSS
     pulse_css = """
     <style>
     @keyframes map-pulse {
         0% { r: 12; stroke-opacity: 0.8; fill-opacity: 0.4; }
         50% { r: 35; stroke-opacity: 0.2; fill-opacity: 0.1; }
         100% { r: 12; stroke-opacity: 0.8; fill-opacity: 0.4; }
-    }
-    .pulse-circle {
-        animation: map-pulse 2s ease-in-out infinite;
-        transform-origin: center;
     }
     </style>
     """
@@ -315,16 +344,27 @@ with left:
     # HQ marker
     folium.Marker([center_lat, center_lon], icon=folium.Icon(color='darkblue', icon='building', prefix='fa'), tooltip="POSTE DE COMMANDEMENT").add_to(m)
     
+    # Police stations from GeoJSON
+    for station in police_stations:
+        folium.Marker([station['lat'], station['lon']], 
+            icon=folium.Icon(color='blue', icon='shield', prefix='fa'),
+            popup=f"Police: {station['name']}",
+            tooltip=f"🚔 {station['name']}"
+        ).add_to(m)
+    
     for idx, alert in df_alerts.iterrows():
         color = get_alert_color(alert['alert_type'])
         label = get_alert_label(alert['alert_type'])
         status = alert['status']
         lat, lon = alert['latitude'], alert['longitude']
+        is_zoomed = st.session_state.zoom_to == alert['id']
         
         if status == 'active':
             # Pulsing circles for active alerts
-            folium.CircleMarker([lat, lon], radius=12, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.4, popup=f"Zone #{alert['id']}").add_to(m)
-            folium.CircleMarker([lat, lon], radius=35, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.08, popup=f"Zone #{alert['id']}").add_to(m)
+            folium.CircleMarker([lat, lon], radius=12, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.4).add_to(m)
+            folium.CircleMarker([lat, lon], radius=35, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.08).add_to(m)
+            if is_zoomed:
+                folium.Circle([lat, lon], radius=100, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.15).add_to(m)
             folium.Marker([lat, lon], icon=folium.Icon(color='red', icon='exclamation', prefix='fa'),
                 popup=folium.Popup(f"""<div style="font-family:sans-serif;min-width:200px;color:#fff;background:#111;padding:10px;border-radius:6px;border-left:3px solid {color};"><h4 style="color:{color};margin:0;font-size:1rem;">🚨 {label} #{alert['id']}</h4><hr style="border-color:#333;margin:6px 0;"><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Status:</b> <span style="color:#ff0000;font-weight:bold;">ACTIVE</span></p><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Heure:</b> {alert['created_at']}</p><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Desc:</b> {str(alert['description']) if alert['description'] else 'Non specifie'}</p><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Tel:</b> {alert['phone'] or 'Anonyme'}</p></div>""", max_width=320),
                 tooltip=f"🔴 #{alert['id']} {label}"
@@ -365,7 +405,6 @@ with right:
                 tile_class += " alert-tile-progress"
             time_ago = format_time_ago(alert['created_at']) if isinstance(alert['created_at'], str) else "now"
             
-            # FIX: str() wrapper for description to prevent NoneType error
             desc_display = str(alert['description'])
             if len(desc_display) > 50:
                 desc_display = desc_display[:50] + '...'
@@ -383,8 +422,13 @@ with right:
             </div>
             """, unsafe_allow_html=True)
             
-            c1, c2, c3 = st.columns(3)
+            # BOUTON ZOOMER + actions
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
+                if st.button("🔍 ZOOMER", key=f"zoom_{alert['id']}", use_container_width=True):
+                    st.session_state.zoom_to = alert['id']
+                    st.rerun()
+            with c2:
                 if alert['status'] == 'active' and st.button("🚀 PRENDRE", key=f"take_{alert['id']}", use_container_width=True):
                     update_alert_status(alert['id'], 'in_progress', user['username'])
                     route = generate_route_points(center_lat, center_lon, alert['latitude'], alert['longitude'])
@@ -392,13 +436,13 @@ with right:
                     st.toast("Intervention lancee!")
                     time.sleep(0.3)
                     st.rerun()
-            with c2:
+            with c3:
                 if alert['status'] == 'in_progress' and st.button("✅ RESOUDRE", key=f"resolve_{alert['id']}", use_container_width=True):
                     update_alert_status(alert['id'], 'resolved', user['username'])
                     st.toast("Alerte resolue!")
                     time.sleep(0.3)
                     st.rerun()
-            with c3:
+            with c4:
                 if st.button("🗺 ROUTE", key=f"route_{alert['id']}", use_container_width=True):
                     route = generate_route_points(center_lat, center_lon, alert['latitude'], alert['longitude'])
                     add_route_data(alert['id'], json.dumps(route), user['username'])
@@ -428,10 +472,8 @@ st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 if st.button("← RETOUR ACCUEIL"):
     st.switch_page("streamlit_app.py")
 
-# Footer
 st.markdown("""
 <div class="footer-co">
-    <b>MutuAlert</b> &copy; 2026 | Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> | Tous droits reserves<br>
-    <span style="color:#333;">Securite civique en temps reel</span>
+    <b>MutuAlert</b> &copy; 2026 | Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> | Tous droits reserves
 </div>
 """, unsafe_allow_html=True)
