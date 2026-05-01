@@ -2,7 +2,7 @@ import streamlit as st
 import time
 from datetime import datetime
 
-st.set_page_config(page_title="Alerte Citoyen", page_icon="🚨", layout="centered")
+st.set_page_config(page_title="ALERTE URGENCE", page_icon="🚨", layout="centered")
 
 import sys
 import os
@@ -16,178 +16,313 @@ init_db()
 
 st.markdown("""
 <style>
-.status-box {
-    background: #1C1E26;
-    border-radius: 12px;
-    padding: 1.5rem;
-    border-left: 4px solid #FF4B4B;
-    margin: 1rem 0;
-}
+    @keyframes pulse-ring {
+        0% { transform: scale(0.8); opacity: 1; }
+        80% { transform: scale(1.4); opacity: 0; }
+        100% { transform: scale(1.4); opacity: 0; }
+    }
+    @keyframes pulse-btn {
+        0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7), 0 0 20px rgba(255,0,0,0.4) inset; }
+        50% { box-shadow: 0 0 0 30px rgba(255,0,0,0), 0 0 60px rgba(255,0,0,0.6) inset; }
+        100% { box-shadow: 0 0 0 0 rgba(255,0,0,0), 0 0 20px rgba(255,0,0,0.4) inset; }
+    }
+    @keyframes shake {
+        0%,100% { transform: translateX(0); }
+        10%,30%,50%,70%,90% { transform: translateX(-2px); }
+        20%,40%,60%,80% { transform: translateX(2px); }
+    }
+    @keyframes scanline {
+        0% { top: -10%; }
+        100% { top: 110%; }
+    }
+    .urgency-bg {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: radial-gradient(ellipse at center, #1a0a0a 0%, #0d0d0d 60%, #000000 100%);
+        z-index: -1;
+    }
+    .urgency-header {
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .urgency-header h1 {
+        font-size: 2rem;
+        font-weight: 900;
+        color: #ff0000;
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        text-shadow: 0 0 20px rgba(255,0,0,0.5);
+        margin: 0;
+    }
+    .urgency-header p {
+        color: #666;
+        font-size: 0.9rem;
+        letter-spacing: 2px;
+        margin: 0.3rem 0 0 0;
+    }
+    .emergency-ring {
+        position: relative;
+        width: 280px;
+        height: 280px;
+        margin: 1rem auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .emergency-ring::before {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: 3px solid rgba(255,0,0,0.3);
+        animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    .emergency-ring::after {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: 3px solid rgba(255,0,0,0.2);
+        animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        animation-delay: 0.5s;
+    }
+    .status-ok {
+        background: linear-gradient(135deg, #0a2a0a 0%, #1a3a1a 100%);
+        border-left: 4px solid #00ff44;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    .status-ok h3 {
+        color: #00ff44;
+        margin-top: 0;
+    }
+    .data-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid #222;
+        font-size: 0.9rem;
+    }
+    .data-label { color: #888; }
+    .data-value { color: #fff; font-weight: bold; }
+    .type-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 0.5rem;
+        margin: 1rem 0;
+    }
+    .type-btn {
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 0.6rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        color: #aaa;
+        font-size: 0.85rem;
+    }
+    .type-btn:hover { border-color: #FF4B4B; color: #fff; }
+    .type-btn.active { border-color: #FF4B4B; background: rgba(255,75,75,0.1); color: #FF4B4B; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("# 🚨 Portail Citoyen")
-st.markdown("### Envoyez une alerte d'urgence instantanément")
+st.markdown('<div class="urgency-bg"></div>', unsafe_allow_html=True)
+
+st.markdown("""
+<div class="urgency-header">
+    <h1>🚨 ALERTE D'URGENCE</h1>
+    <p>Envoyez votre position aux forces de l'ordre</p>
+</div>
+""", unsafe_allow_html=True)
+
 st.divider()
 
-st.subheader("1. Type d'alerte")
+# Alert type selector
+st.markdown("<p style='color:#888; font-size:0.8rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:0.5rem;'>Type d'alerte</p>", unsafe_allow_html=True)
+
 alert_type = st.segmented_control(
     "",
     options=["danger", "medical", "fire", "suspicious", "other"],
     format_func=lambda x: {
-        "danger": "🆘 Danger vital",
-        "medical": "🏥 Médical",
-        "fire": "🔥 Incendie",
-        "suspicious": "👁 Suspect",
-        "other": "⚠️ Autre"
+        "danger": "🆘 DANGER",
+        "medical": "🏥 MEDICAL",
+        "fire": "🔥 INCENDIE",
+        "suspicious": "👁 SUSPECT",
+        "other": "⚠️ AUTRE"
     }.get(x, x),
     default="danger"
 )
 
 st.divider()
-st.subheader("2. Votre position GPS")
 
-geolocation_html = """
-<div id="geo-container">
-    <button onclick="getLocation()" style="
-        background: linear-gradient(135deg, #4B8BFF, #2C5FD1);
+# GPS Location
+st.markdown("<p style='color:#888; font-size:0.8rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:0.5rem;'>Localisation GPS</p>", unsafe_allow_html=True)
+
+geo_html = """
+<div style="text-align:center; margin-bottom:1rem;">
+    <button onclick="getLoc()" style="
+        background: linear-gradient(135deg, #1a237e, #283593);
         color: white;
         border: none;
-        padding: 1rem 2rem;
-        border-radius: 12px;
+        padding: 0.8rem 1.5rem;
+        border-radius: 8px;
         font-size: 1rem;
         cursor: pointer;
         width: 100%;
-        margin-bottom: 1rem;
-    ">📍 Localiser ma position</button>
-    <div id="location-result" style="
-        background: #1C1E26;
-        border-radius: 12px;
-        padding: 1rem;
+    ">📍 LOCALISER MA POSITION</button>
+    <div id="geo-res" style="
+        background: #0d0d1a;
+        border: 1px solid #1a237e;
+        border-radius: 8px;
+        padding: 0.8rem;
+        margin-top: 0.5rem;
         display: none;
-        border-left: 4px solid #4B8BFF;
-    ">
-        <p><strong>Latitude:</strong> <span id="lat"></span></p>
-        <p><strong>Longitude:</strong> <span id="lon"></span></p>
-        <p><strong>Précision:</strong> <span id="acc"></span> mètres</p>
-    </div>
+        font-family: monospace;
+        text-align: left;
+    "></div>
 </div>
 <script>
-function getLocation() {
-    const result = document.getElementById('location-result');
-    if (!navigator.geolocation) {
-        alert("La géolocalisation n'est pas supportée par ce navigateur.");
-        return;
-    }
-    result.style.display = 'block';
-    result.innerHTML = '<p style="color: #888;">Recherche de position...</p>';
+function getLoc() {
+    const r = document.getElementById('geo-res');
+    if (!navigator.geolocation) { r.style.display='block'; r.innerHTML='<span style="color:#ff4444">Geolocalisation non supportee</span>'; return; }
+    r.style.display='block';
+    r.innerHTML='<span style="color:#888">Acquisition satellites...</span>';
     navigator.geolocation.getCurrentPosition(
-        function(position) {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            const acc = position.coords.accuracy;
-            result.innerHTML = `
-                <p><strong style="color: #4B8BFF;">✓ Position capturée</strong></p>
-                <p>Latitude: ${lat.toFixed(6)}</p>
-                <p>Longitude: ${lon.toFixed(6)}</p>
-                <p>Précision: ±${Math.round(acc)} mètres</p>
-            `;
-            window.parent.postMessage({type: 'streamlit:setComponentValue', value: {lat: lat, lon: lon, acc: acc}}, '*');
+        function(p) {
+            r.innerHTML = '<span style="color:#00ff88">✓ POSITION VERIFIEE</span><br>' +
+                '<span style="color:#aaa">LAT: ' + p.coords.latitude.toFixed(6) + '</span><br>' +
+                '<span style="color:#aaa">LON: ' + p.coords.longitude.toFixed(6) + '</span><br>' +
+                '<span style="color:#aaa">ACC: ±' + Math.round(p.coords.accuracy) + 'm</span>';
+            window.parent.postMessage({type:'streamlit:setComponentValue',value:{lat:p.coords.latitude,lon:p.coords.longitude}},'*');
         },
-        function(error) {
-            let msg = "Erreur de géolocalisation. ";
-            switch(error.code) {
-                case error.PERMISSION_DENIED: msg += "Permission refusée."; break;
-                case error.POSITION_UNAVAILABLE: msg += "Position indisponible."; break;
-                case error.TIMEOUT: msg += "Délai dépassé."; break;
-            }
-            result.innerHTML = `<p style="color: #FF4B4B;">${msg}</p>`;
+        function(e) {
+            let m='Erreur GPS. ';
+            if(e.code==1)m+='Permission refusee.';
+            else if(e.code==2)m+='Signal indisponible.';
+            else if(e.code==3)m+='Delai depasse.';
+            r.innerHTML='<span style="color:#ff4444">'+m+'</span>';
         },
-        {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
+        {enableHighAccuracy:true, timeout:12000, maximumAge:0}
     );
 }
 </script>
 """
+st.components.v1.html(geo_html, height=200)
 
-st.components.v1.html(geolocation_html, height=250)
-
-st.markdown("*Si la géolocalisation automatique échoue:*")
-lat_input = st.number_input("Latitude", value=0.0, format="%.6f", step=0.000001, key="manual_lat")
-lon_input = st.number_input("Longitude", value=0.0, format="%.6f", step=0.000001, key="manual_lon")
+st.markdown("<p style='color:#555; font-size:0.75rem; text-align:center;'>Ou saisissez manuellement :</p>", unsafe_allow_html=True)
+c1, c2 = st.columns(2)
+with c1:
+    lat_input = st.number_input("LATITUDE", value=0.0, format="%.6f", step=0.000001, key="man_lat", label_visibility="collapsed")
+with c2:
+    lon_input = st.number_input("LONGITUDE", value=0.0, format="%.6f", step=0.000001, key="man_lon", label_visibility="collapsed")
 
 st.divider()
-st.subheader("3. Détails (optionnels)")
-col1, col2 = st.columns(2)
-with col1:
-    description = st.text_area("Description de la situation", placeholder="Décrivez ce qui se passe...", height=100)
-with col2:
-    phone = st.text_input("Numéro de contact (optionnel)", placeholder="+XXX XXXX XXXX")
-    st.caption("La police pourrait vous recontacter. Anonyme si vide.")
 
+# Optional details
+st.markdown("<p style='color:#888; font-size:0.8rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:0.5rem;'>Details (optionnels)</p>", unsafe_allow_html=True)
+desc = st.text_area("", placeholder="Decrivez la situation en cours...", height=80, key="desc_field", label_visibility="collapsed")
+phone = st.text_input("Tel contact (optionnel)", placeholder="+225 XX XX XX XX", key="phone_field")
+
+st.divider()
+
+# Session state
 if 'alert_sent' not in st.session_state:
     st.session_state.alert_sent = False
 if 'alert_id' not in st.session_state:
     st.session_state.alert_id = None
 
-st.divider()
-st.subheader("4. Envoyer l'alerte")
+has_valid = validate_coordinates(lat_input, lon_input)
 
-has_valid_coords = validate_coordinates(lat_input, lon_input)
+# EMERGENCY BUTTON
+st.markdown("<div class='emergency-ring'>", unsafe_allow_html=True)
+btn_disabled = not has_valid
 
-if not has_valid_coords and (lat_input == 0.0 and lon_input == 0.0):
-    st.warning("⚠️ Veuillez d'abord obtenir votre position GPS ou entrer les coordonnées manuellement.")
-
-if st.button("🚨 ALERTE D'URGENCE 🚨", type="primary", use_container_width=True, disabled=not has_valid_coords):
-    if not has_valid_coords:
-        st.error("Coordonnées invalides. Veuillez vérifier votre position.")
+if st.button("ALERTE\nURGENCE", key="big_red_btn", type="primary", use_container_width=False, disabled=btn_disabled):
+    if not has_valid:
+        st.error("Coordonnees invalides")
     else:
-        with st.spinner("Envoi de l'alerte aux forces de l'ordre..."):
+        with st.spinner("TRANSMISSION EN COURS..."):
             try:
-                alert_id = create_alert(
+                aid = create_alert(
                     alert_type=alert_type,
                     latitude=lat_input,
                     longitude=lon_input,
                     accuracy=50.0,
-                    description=description if description else None,
+                    description=desc if desc else None,
                     phone=phone if phone else None,
-                    device_id=st.session_state.get('device_id', 'web-' + str(hash(str(lat_input)) % 100000))
+                    device_id=st.session_state.get('dev_id', 'web-' + str(hash(str(lat_input)) % 100000))
                 )
                 st.session_state.alert_sent = True
-                st.session_state.alert_id = alert_id
+                st.session_state.alert_id = aid
                 time.sleep(1.5)
             except Exception as e:
-                st.error(f"Erreur d'envoi: {str(e)}")
+                st.error(f"ERREUR TRANSMISSION: {str(e)}")
 
+st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+    [data-testid="stButton"] > button[kind="primary"] {
+        width: 220px !important;
+        height: 220px !important;
+        border-radius: 50% !important;
+        background: radial-gradient(circle at 35% 35%, #ff5555, #cc0000, #880000) !important;
+        color: white !important;
+        font-size: 1.6rem !important;
+        font-weight: 900 !important;
+        border: 3px solid #ff8888 !important;
+        box-shadow: 0 0 30px rgba(255,0,0,0.5), inset 0 0 40px rgba(0,0,0,0.3) !important;
+        animation: pulse-btn 2s infinite !important;
+        line-height: 1.2 !important;
+        white-space: pre-line !important;
+        display: block;
+        margin: 0 auto;
+    }
+    [data-testid="stButton"] > button[kind="primary"]:hover {
+        transform: scale(1.08) !important;
+        background: radial-gradient(circle at 35% 35%, #ff7777, #dd0000, #aa0000) !important;
+    }
+    [data-testid="stButton"] > button[kind="primary"]:disabled {
+        background: #333 !important;
+        border-color: #555 !important;
+        color: #666 !important;
+        animation: none !important;
+        box-shadow: none !important;
+        cursor: not-allowed !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+if not has_valid and (lat_input == 0.0 and lon_input == 0.0):
+    st.warning("⚠️ Localisez votre position ou saisissez les coordonnees avant d'envoyer.")
+
+# Success display
 if st.session_state.alert_sent:
     st.balloons()
-    st.success(f"✅ **Alerte #{st.session_state.alert_id} envoyée avec succès !**")
     st.markdown(f"""
-    <div class="status-box">
-        <h3 style="color: #FF4B4B; margin-top: 0;">🚨 Alerte {get_alert_label(alert_type)} enregistrée</h3>
-        <p><strong>ID Alerte:</strong> #{st.session_state.alert_id}</p>
-        <p><strong>Position:</strong> {get_location_display(lat_input, lon_input)}</p>
-        <p><strong>Heure:</strong> {datetime.now().strftime('%H:%M:%S')}</p>
-        <p><strong>Statut:</strong> <span style="color: #FF4B4B;">● Active - Police notifiée</span></p>
+    <div class="status-ok">
+        <h3>✅ ALERTE #{st.session_state.alert_id} CONFIRMEE</h3>
+        <div class="data-row"><span class="data-label">TYPE</span><span class="data-value">{get_alert_label(alert_type)}</span></div>
+        <div class="data-row"><span class="data-label">POSITION</span><span class="data-value">{get_location_display(lat_input, lon_input)}</span></div>
+        <div class="data-row"><span class="data-label">HEURE</span><span class="data-value">{datetime.now().strftime('%H:%M:%S')}</span></div>
+        <div class="data-row"><span class="data-label">STATUT</span><span class="data-value" style="color:#00ff44;">● ACTIVE - POLICE NOTIFIEE</span></div>
     </div>
     """, unsafe_allow_html=True)
+    
     st.info("""
-    **Conseils de sécurité:**
-    - Restez calme et trouvez un endroit sûr si possible
-    - Gardez votre téléphone allumé
-    - La police a reçu votre position exacte
-    - En cas de danger imminent, appelez directement les urgences
+    **Consignes de securite:**
+    Restez calme. Trouvez un endroit sur. Gardez votre telephone allume. La police a recu votre position exacte. En cas de danger imminent, contactez directement les urgences locales.
     """)
-    if st.button("🔄 Nouvelle alerte", type="secondary"):
+    
+    if st.button("NOUVELLE ALERTE", type="secondary"):
         st.session_state.alert_sent = False
         st.session_state.alert_id = None
         st.rerun()
 
 st.divider()
-st.caption("""
-**Mode démonstration POESAM 2026** | Cette application est un prototype fonctionnel. 
-En production, l'application mobile native utilisera la géolocalisation haute précision, 
-chiffrement bout-en-bout, et connexion directe aux systèmes CIC.
-""")
-
-if st.button("← Retour à l'accueil", key="back_home_client"):
+if st.button("← RETOUR ACCUEIL", key="back_home"):
     st.switch_page("streamlit_app.py")
