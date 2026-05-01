@@ -4,8 +4,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="ALERTE URGENCE", page_icon="🚨", layout="centered")
 
-import sys
-import os
+import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.modules.database import init_db, create_alert
