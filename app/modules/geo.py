@@ -1,10 +1,13 @@
 import numpy as np
 
 def validate_coordinates(lat, lon):
-    """Validate GPS coordinates"""
+    """Validate GPS coordinates - rejects null island (0,0)"""
     try:
         lat = float(lat)
         lon = float(lon)
+        # Reject 0,0 (null island / not set)
+        if abs(lat) < 0.001 and abs(lon) < 0.001:
+            return False
         return -90 <= lat <= 90 and -180 <= lon <= 180
     except (ValueError, TypeError):
         return False

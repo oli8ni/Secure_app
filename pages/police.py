@@ -13,7 +13,18 @@ st.markdown("""
     section[data-testid="stSidebar"]{display:none!important}
     button[kind="header"]{display:none!important}
     .stApp>header{display:none!important}
+    div[data-testid="stSidebarCollapsedControl"]{display:none!important}
 </style>
+<script>
+setTimeout(function(){
+    var s=document.querySelector('section[data-testid="stSidebar"]');
+    if(s)s.style.display='none';
+    var n=document.querySelector('[data-testid="stSidebarNav"]');
+    if(n)n.style.display='none';
+    var c=document.querySelector('div[data-testid="stSidebarCollapsedControl"]');
+    if(c)c.style.display='none';
+}, 500);
+</script>
 """, unsafe_allow_html=True)
 
 import sys, os
@@ -153,7 +164,6 @@ ac = len(df_alerts[df_alerts['status']=='active'])
 ip = len(df_alerts[df_alerts['status']=='in_progress'])
 rc = len(df_alerts[df_alerts['status']=='resolved'])
 tc = len(df_alerts)
-st.markdown(f'<div class="metric-panel"><div class="metric-num metric-red">{ac}</div><div class="metric-label">Actives</div></div>', unsafe_allow_html=True) if m1 else None
 with m1: st.markdown(f'<div class="metric-panel"><div class="metric-num metric-red">{ac}</div><div class="metric-label">Actives</div></div>', unsafe_allow_html=True)
 with m2: st.markdown(f'<div class="metric-panel"><div class="metric-num metric-amber">{ip}</div><div class="metric-label">En Cours</div></div>', unsafe_allow_html=True)
 with m3: st.markdown(f'<div class="metric-panel"><div class="metric-num metric-green">{rc}</div><div class="metric-label">Resolues</div></div>', unsafe_allow_html=True)

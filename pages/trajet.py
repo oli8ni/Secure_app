@@ -12,7 +12,18 @@ st.markdown("""
     section[data-testid="stSidebar"]{display:none!important}
     button[kind="header"]{display:none!important}
     .stApp>header{display:none!important}
+    div[data-testid="stSidebarCollapsedControl"]{display:none!important}
 </style>
+<script>
+setTimeout(function(){
+    var s=document.querySelector('section[data-testid="stSidebar"]');
+    if(s)s.style.display='none';
+    var n=document.querySelector('[data-testid="stSidebarNav"]');
+    if(n)n.style.display='none';
+    var c=document.querySelector('div[data-testid="stSidebarCollapsedControl"]');
+    if(c)c.style.display='none';
+}, 500);
+</script>
 """, unsafe_allow_html=True)
 
 import sys, os
