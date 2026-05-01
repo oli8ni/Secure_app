@@ -6,8 +6,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="CENTRE DE COMMANDEMENT", page_icon="👮", layout="wide")
 
-import sys
-import os
+import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.modules.database import init_db, get_active_alerts, get_all_alerts, update_alert_status, add_route_data
