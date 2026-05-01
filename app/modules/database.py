@@ -27,7 +27,8 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 resolved_at TIMESTAMP,
                 resolved_by TEXT,
-                route_data TEXT
+                route_data TEXT,
+                police_station_id INTEGER
             )
         """)
         
@@ -44,6 +45,20 @@ def init_db():
                 is_active INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
+            )
+        """)
+        
+        # Police stations table (NEW)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS police_stations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                address TEXT,
+                phone TEXT,
+                is_default INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
@@ -76,6 +91,18 @@ def init_db():
                 VALUES (?, ?, ?, ?, ?, ?)
             """, ("officer1", officer_hash, "Agent Martin", "OFF001", "officer", "District 1"))
         
+        # Insert default police station if empty
+        cursor.execute("SELECT COUNT(*) FROM police_stations")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""
+                INSERT INTO police_stations (name, latitude, longitude, address, phone, is_default)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, ("Poste Central Abidjan", 5.3600, -4.0083, "Plateau, Abidjan", "+225 20 22 22 22", 1))
+            cursor.execute("""
+                INSERT INTO police_stations (name, latitude, longitude, address, phone, is_default)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, ("Commissariat Cocody", 5.3560, -3.9670, "Cocody, Abidjan", "+225 20 25 25 25", 0))
+        
         conn.commit()
 
 @contextmanager
@@ -99,7 +126,6 @@ def create_alert(alert_type, latitude, longitude, accuracy=None, description=Non
         alert_id = cursor.lastrowid
         conn.commit()
         
-        # Add log entry
         cursor.execute("""
             INSERT INTO alert_logs (alert_id, action, performed_by, details)
             VALUES (?, 'created', 'system', 'Alert created by client')
@@ -128,6 +154,14 @@ def get_all_alerts(limit=100):
             LIMIT ?
         """, conn, params=(limit,))
     return df
+
+def get_alert_by_id(alert_id):
+    """Get single alert by ID"""
+    with get_db() as conn:
+        df = pd.read_sql_query("""
+            SELECT * FROM alerts WHERE id = ?
+        """, conn, params=(alert_id,))
+    return df.iloc[0] if len(df) > 0 else None
 
 def update_alert_status(alert_id, status, resolved_by=None):
     """Update alert status"""
@@ -177,10 +211,50 @@ def get_alert_stats():
         """)
         return {row['status']: row['count'] for row in cursor.fetchall()}
 
-def get_alert_by_id(alert_id):
-    """Get single alert by ID"""
+# ========== POLICE STATIONS ==========
+
+def get_police_stations():
+    """Get all police stations"""
     with get_db() as conn:
-        df = pd.read_sql_query("""
-            SELECT * FROM alerts WHERE id = ?
-        """, conn, params=(alert_id,))
+        df = pd.read_sql_query("SELECT * FROM police_stations ORDER BY is_default DESC, name", conn)
+    return df
+
+def get_default_station():
+    """Get default police station"""
+    with get_db() as conn:
+        df = pd.read_sql_query("SELECT * FROM police_stations WHERE is_default = 1 LIMIT 1", conn)
     return df.iloc[0] if len(df) > 0 else None
+
+def get_station_by_id(station_id):
+    """Get station by ID"""
+    with get_db() as conn:
+        df = pd.read_sql_query("SELECT * FROM police_stations WHERE id = ?", conn, params=(station_id,))
+    return df.iloc[0] if len(df) > 0 else None
+
+def add_police_station(name, latitude, longitude, address=None, phone=None, is_default=False):
+    """Add a new police station"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if is_default:
+            cursor.execute("UPDATE police_stations SET is_default = 0")
+        cursor.execute("""
+            INSERT INTO police_stations (name, latitude, longitude, address, phone, is_default)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, latitude, longitude, address, phone, 1 if is_default else 0))
+        conn.commit()
+        return cursor.lastrowid
+
+def update_station_default(station_id):
+    """Set a station as default"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE police_stations SET is_default = 0")
+        cursor.execute("UPDATE police_stations SET is_default = 1 WHERE id = ?", (station_id,))
+        conn.commit()
+
+def delete_station(station_id):
+    """Delete a station"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM police_stations WHERE id = ?", (station_id,))
+        conn.commit()
