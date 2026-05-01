@@ -1,6 +1,5 @@
 import json
 import time
-from modules.database import get_db
 
 def get_alert_color(alert_type):
     """Color mapping for alert types"""

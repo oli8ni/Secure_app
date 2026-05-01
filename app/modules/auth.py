@@ -1,6 +1,5 @@
 import bcrypt
 import streamlit as st
-from modules.database import get_db
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -10,7 +9,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def authenticate_user(username: str, password: str):
     """Authenticate police user"""
-    from modules.database import get_db
+    from app.modules.database import get_db
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
