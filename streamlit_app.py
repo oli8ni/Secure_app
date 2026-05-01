@@ -1,6 +1,5 @@
 import streamlit as st
 
-# Page config
 st.set_page_config(
     page_title="SecureAlert - Sécurité Civique",
     page_icon="🛡️",
@@ -8,8 +7,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for branding
-custom_css = """
+st.markdown("""
 <style>
     .main-title {
         font-size: 2.5rem;
@@ -49,23 +47,19 @@ custom_css = """
         border-top: 1px solid #333;
     }
 </style>
-"""
-st.markdown(custom_css, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# Hide sidebar nav on homepage
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
-# Header
 st.markdown('<div class="main-title">🛡️ SecureAlert</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Protection civique en temps réel | POESAM 2026</div>', unsafe_allow_html=True)
 
 st.divider()
 
-# Hero description
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     st.markdown("""
@@ -77,7 +71,6 @@ with col2:
     
     """, unsafe_allow_html=True)
 
-# Navigation cards
 st.divider()
 st.subheader("Choisissez votre portail")
 
@@ -98,7 +91,7 @@ with col_a:
     """, unsafe_allow_html=True)
     
     if st.button("Accéder Portail Citoyen →", key="btn_citizen", use_container_width=True):
-        st.switch_page("app/pages/1_🚨_Client.py")
+        st.switch_page("pages/client.py")
 
 with col_b:
     st.markdown("""
@@ -116,14 +109,11 @@ with col_b:
     """, unsafe_allow_html=True)
     
     if st.button("Accéder Portail Police →", key="btn_police", use_container_width=True):
-        st.switch_page("app/pages/2_👮_Police.py")
+        st.switch_page("pages/police.py")
 
-# Stats section
 st.divider()
 st.subheader("📊 Tableau de bord public")
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.modules.database import init_db, get_alert_stats
 init_db()
 stats = get_alert_stats()
@@ -140,7 +130,6 @@ with col_s3:
 with col_s4:
     st.metric("Zones couvertes", "12 districts")
 
-# Footer
 st.markdown("""
 <div class="footer">
     SecureAlert © 2026 | Projet candidat au POESAM Orange | 
