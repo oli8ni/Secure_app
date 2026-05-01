@@ -1,5 +1,0 @@
-# Fichiers système requis par Streamlit Cloud (si besoin)
-# Exemples courants pour geospatial:
-# build-essential
-# libpq-dev
-# python3-dev
