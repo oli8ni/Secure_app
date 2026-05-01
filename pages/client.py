@@ -212,9 +212,9 @@ with co1:
 with co2:
     st.markdown(f'<div class="gb"><div class="gl">LONGITUDE</div><div class="gc">{lon_val:.6f}</div></div>', unsafe_allow_html=True)
 with co3:
-    is_valid = validate_coordinates(lat_val, lon_val)
-    v_color, v_text = ("#0f8", "VALIDE") if is_valid else ("#f44", "INVALIDE")
-    st.markdown(f'<div class="gb"><div class="gl">STATUT</div><div class="gc" style="color:{v_color}">{v_text}</div></div>', unsafe_allow_html=True)
+    is_v = validate_coordinates(lat_val, lon_val)
+    v_c, v_t = ("#0f8", "VALIDE") if is_v else ("#f44", "INVALIDE")
+    st.markdown(f'<div class="gb"><div class="gl">STATUT</div><div class="gc" style="color:{v_c}">{v_t}</div></div>', unsafe_allow_html=True)
 
 st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
 
