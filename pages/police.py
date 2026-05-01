@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="CENTRE DE COMMANDEMENT", page_icon="👮", layout="wide")
+st.set_page_config(page_title="MutuAlert - Centre de Commandement", page_icon="👮", layout="wide")
 
 import sys
 import os
@@ -22,14 +22,12 @@ st.markdown("""
 <style>
     @keyframes blink-border {
         0%, 100% { border-color: rgba(255,0,0,0.3); }
-        50% { border-color: rgba(255,0,0,0.8); }
+        50% { border-color: rgba(255,0,0,0.9); }
     }
-    @keyframes ticker {
-        0% { transform: translateX(100%); }
-        100% { transform: translateX(-100%); }
-    }
-    .warroom-body {
-        background: #050508;
+    @keyframes pulse-dot {
+        0% { r: 8; opacity: 0.8; }
+        50% { r: 20; opacity: 0.2; }
+        100% { r: 8; opacity: 0.8; }
     }
     .cc-header {
         background: linear-gradient(90deg, #0a0a1a 0%, #1a1a3a 50%, #0a0a1a 100%);
@@ -41,18 +39,17 @@ st.markdown("""
         align-items: center;
     }
     .cc-title {
-        font-size: 1.4rem;
+        font-size: 1.3rem;
         font-weight: 900;
         color: #4B8BFF;
         letter-spacing: 3px;
         text-transform: uppercase;
         margin: 0;
-        text-shadow: 0 0 10px rgba(75,139,255,0.3);
     }
     .cc-clock {
         color: #00ff88;
         font-family: monospace;
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: bold;
     }
     .cc-badge {
@@ -60,10 +57,11 @@ st.markdown("""
         color: white;
         padding: 2px 8px;
         border-radius: 4px;
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         font-weight: bold;
         animation: blink-border 1.5s infinite;
         border: 1px solid transparent;
+        margin-left: 0.5rem;
     }
     .metric-panel {
         background: linear-gradient(145deg, #0d0d1a, #141428);
@@ -130,24 +128,6 @@ st.markdown("""
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .tile-actions {
-        display: flex;
-        gap: 0.3rem;
-        margin-top: 0.5rem;
-    }
-    .action-btn {
-        flex: 1;
-        padding: 0.3rem;
-        border-radius: 4px;
-        border: none;
-        font-size: 0.7rem;
-        font-weight: bold;
-        cursor: pointer;
-        text-align: center;
-    }
-    .btn-take { background: #FF8800; color: black; }
-    .btn-resolve { background: #00aa44; color: white; }
-    .btn-route { background: #1a237e; color: white; }
     .login-box {
         max-width: 420px;
         margin: 3rem auto;
@@ -165,16 +145,23 @@ st.markdown("""
         letter-spacing: 2px;
         margin-bottom: 1.5rem;
     }
-    .ticker-bar {
-        background: #0a0a1a;
-        border-top: 1px solid #1a1a3a;
-        padding: 0.3rem 1rem;
-        overflow: hidden;
-        white-space: nowrap;
-        font-size: 0.75rem;
-        color: #666;
-        font-family: monospace;
+    .footer-co {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #0a0a0a;
+        border-top: 1px solid #1a1a1a;
+        padding: 0.5rem 1rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 100;
+        font-size: 0.7rem;
+        color: #555;
     }
+    .footer-co a { color: #555; text-decoration: none; }
+    .footer-co a:hover { color: #FF4B4B; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -191,12 +178,10 @@ if st.session_state.police_user is None:
     </div>
     """, unsafe_allow_html=True)
     
-    # Custom styling for the login form
     st.markdown("""
     <style>
         [data-testid="stTextInput"] label { color: #4B8BFF !important; font-size: 0.75rem !important; text-transform: uppercase !important; letter-spacing: 1px !important; }
         [data-testid="stTextInput"] input { background: #0d0d1a !important; border: 1px solid #1a1a3a !important; color: #fff !important; }
-        [data-testid="stTextInput"] input:focus { border-color: #4B8BFF !important; }
     </style>
     """, unsafe_allow_html=True)
     
@@ -235,11 +220,10 @@ if st.session_state.police_user is None:
 
 user = st.session_state.police_user
 
-# WAR ROOM HEADER
 st.markdown(f"""
 <div class="cc-header">
     <div>
-        <span class="cc-title">CENTRE DE COMMANDEMENT</span>
+        <span class="cc-title">MUTU ALERT - COMMANDEMENT</span>
         <span class="cc-badge">LIVE</span>
     </div>
     <div class="cc-clock">{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</div>
@@ -262,19 +246,17 @@ with st.sidebar:
     
     st.divider()
     st.markdown("<div style='color:#4B8BFF; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.5rem;'>Filtres</div>", unsafe_allow_html=True)
-    
     show_status = st.segmented_control("", 
         ["all", "active", "in_progress", "resolved"],
         format_func=lambda x: {"all": "TOUS", "active": "ACTIFS", "in_progress": "EN COURS", "resolved": "RESOLUS"}.get(x, x),
         default="all"
     )
 
-# Get data
 df_alerts = get_all_alerts(200)
 if show_status != "all":
     df_alerts = df_alerts[df_alerts['status'] == show_status]
 
-# Metrics row
+# Metrics
 m1, m2, m3, m4 = st.columns(4)
 active_count = len(df_alerts[df_alerts['status'] == 'active'])
 in_progress_count = len(df_alerts[df_alerts['status'] == 'in_progress'])
@@ -292,9 +274,9 @@ with m4:
 
 st.divider()
 
-# Main content
 left, right = st.columns([3, 2])
 
+# === MAP ===
 with left:
     st.markdown("<div style='color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:0.5rem;'>🗺 Carte Temps Reel</div>", unsafe_allow_html=True)
     
@@ -302,25 +284,45 @@ with left:
         center_lat = df_alerts['latitude'].mean()
         center_lon = df_alerts['longitude'].mean()
     else:
-        center_lat, center_lon = 48.8566, 2.3522
+        center_lat, center_lon = 5.3600, -4.0083  # Abidjan default
     
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=13, tiles="CartoDB dark_matter", width='100%', height=550)
-    blinking_css = create_blinking_marker_js()
-    m.get_root().html.add_child(folium.Element(blinking_css))
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=13, tiles="CartoDB dark_matter")
+    
+    # Enhanced blinking CSS injected into map
+    pulse_css = """
+    <style>
+    @keyframes map-pulse {
+        0% { r: 12; stroke-opacity: 0.8; fill-opacity: 0.4; }
+        50% { r: 35; stroke-opacity: 0.2; fill-opacity: 0.1; }
+        100% { r: 12; stroke-opacity: 0.8; fill-opacity: 0.4; }
+    }
+    .pulse-circle {
+        animation: map-pulse 2s ease-in-out infinite;
+        transform-origin: center;
+    }
+    </style>
+    """
+    m.get_root().html.add_child(folium.Element(pulse_css))
     
     # HQ marker
-    folium.Marker([center_lat, center_lon], icon=folium.Icon(color='blue', icon='building', prefix='fa'), popup="HQ", tooltip="POSTE DE COMMANDEMENT").add_to(m)
+    folium.Marker([center_lat, center_lon], icon=folium.Icon(color='darkblue', icon='building', prefix='fa'), tooltip="POSTE DE COMMANDEMENT").add_to(m)
     
     for idx, alert in df_alerts.iterrows():
         color = get_alert_color(alert['alert_type'])
         label = get_alert_label(alert['alert_type'])
         status = alert['status']
+        lat, lon = alert['latitude'], alert['longitude']
         
         if status == 'active':
-            folium.CircleMarker(location=[alert['latitude'], alert['longitude']], radius=30, fill=True, color=color, fill_color=color, fill_opacity=0.25, popup=f"Zone #{alert['id']}").add_to(m)
-            folium.Marker(location=[alert['latitude'], alert['longitude']], icon=folium.Icon(color='red', icon='exclamation', prefix='fa'), popup=folium.Popup(f"""<div style="font-family:sans-serif;min-width:200px;color:#fff;background:#111;padding:8px;border-radius:6px;"><h4 style="color:{color};margin:0;">🚨 {label} #{alert['id']}</h4><p style="margin:4px 0;font-size:0.8rem;"><b>Status:</b> <span style="color:{color};">{status.upper()}</span></p><p style="margin:4px 0;font-size:0.8rem;"><b>Heure:</b> {alert['created_at']}</p><p style="margin:4px 0;font-size:0.8rem;"><b>Desc:</b> {alert['description'] or 'Non specifie'}</p><p style="margin:4px 0;font-size:0.8rem;"><b>Tel:</b> {alert['phone'] or 'Anonyme'}</p></div>""", max_width=300), tooltip=f"#{alert['id']} - {label}").add_to(m)
+            # Pulsing circles for active alerts
+            folium.CircleMarker([lat, lon], radius=12, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.4, popup=f"Zone #{alert['id']}").add_to(m)
+            folium.CircleMarker([lat, lon], radius=35, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.08, popup=f"Zone #{alert['id']}").add_to(m)
+            folium.Marker([lat, lon], icon=folium.Icon(color='red', icon='exclamation', prefix='fa'),
+                popup=folium.Popup(f"""<div style="font-family:sans-serif;min-width:200px;color:#fff;background:#111;padding:10px;border-radius:6px;border-left:3px solid {color};"><h4 style="color:{color};margin:0;font-size:1rem;">🚨 {label} #{alert['id']}</h4><hr style="border-color:#333;margin:6px 0;"><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Status:</b> <span style="color:#ff0000;font-weight:bold;">ACTIVE</span></p><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Heure:</b> {alert['created_at']}</p><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Desc:</b> {str(alert['description']) if alert['description'] else 'Non specifie'}</p><p style="margin:4px 0;font-size:0.8rem;color:#ccc;"><b style="color:#fff;">Tel:</b> {alert['phone'] or 'Anonyme'}</p></div>""", max_width=320),
+                tooltip=f"🔴 #{alert['id']} {label}"
+            ).add_to(m)
         elif status == 'in_progress':
-            folium.Marker(location=[alert['latitude'], alert['longitude']], icon=folium.Icon(color='orange', icon='car', prefix='fa'), popup=f"Intervention #{alert['id']}").add_to(m)
+            folium.Marker([lat, lon], icon=folium.Icon(color='orange', icon='car', prefix='fa'), popup=f"Intervention #{alert['id']}", tooltip=f"🟡 #{alert['id']} En cours").add_to(m)
             if alert['route_data']:
                 try:
                     route = json.loads(alert['route_data'])
@@ -329,15 +331,16 @@ with left:
                 except:
                     pass
         else:
-            folium.Marker(location=[alert['latitude'], alert['longitude']], icon=folium.Icon(color='green', icon='check', prefix='fa'), popup=f"Resolu #{alert['id']}").add_to(m)
+            folium.Marker([lat, lon], icon=folium.Icon(color='green', icon='check', prefix='fa'), popup=f"Resolu #{alert['id']}", tooltip=f"🟢 #{alert['id']} Resolu").add_to(m)
     
-    # Routes to active alerts
+    # Routes from HQ to active alerts
     for idx, alert in df_alerts[df_alerts['status'] == 'active'].iterrows():
         route_pts = generate_route_points(center_lat, center_lon, alert['latitude'], alert['longitude'], num_points=15)
-        folium.PolyLine(route_pts, color='#FF0000', weight=2, opacity=0.35, dash_array='5, 10').add_to(m)
+        folium.PolyLine(route_pts, color='#FF0000', weight=2, opacity=0.3, dash_array='5, 10').add_to(m)
     
     st_folium(m, width=700, height=550, returned_objects=[])
 
+# === ALERT LIST ===
 with right:
     st.markdown("<div style='color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:0.5rem;'>📋 Liste des Alertes</div>", unsafe_allow_html=True)
     
@@ -354,6 +357,13 @@ with right:
                 tile_class += " alert-tile-progress"
             time_ago = format_time_ago(alert['created_at']) if isinstance(alert['created_at'], str) else "now"
             
+            # FIX: str() wrapper for description to prevent NoneType error
+            desc_display = str(alert['description'])
+            if len(desc_display) > 50:
+                desc_display = desc_display[:50] + '...'
+            elif not desc_display or desc_display == 'None':
+                desc_display = 'Pas de description'
+            
             st.markdown(f"""
             <div class="{tile_class}">
                 <div class="tile-header">
@@ -361,7 +371,7 @@ with right:
                     <span class="tile-time">{time_ago}</span>
                 </div>
                 <div class="tile-coords">📍 {alert['latitude']:.5f}, {alert['longitude']:.5f}</div>
-                <div class="tile-desc">{alert['description'][:50] + '...' if alert['description'] and len(alert['description']) > 50 else (alert['description'] or 'Pas de description')}</div>
+                <div class="tile-desc">{desc_display}</div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -387,7 +397,6 @@ with right:
                     st.toast("Itineraire calcule")
                     st.rerun()
 
-# Audit log
 st.divider()
 with st.expander("📜 JOURNAL D'ACTIVITE (AUDIT)"):
     from app.modules.database import get_db
@@ -406,5 +415,14 @@ with st.expander("📜 JOURNAL D'ACTIVITE (AUDIT)"):
     else:
         st.info("Aucune activite enregistree")
 
+st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+
 if st.button("← RETOUR ACCUEIL"):
     st.switch_page("streamlit_app.py")
+
+# Footer
+st.markdown("""
+<div class="footer-co">
+    Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> &copy; 2026 - Tous droits reserves
+</div>
+""", unsafe_allow_html=True)
