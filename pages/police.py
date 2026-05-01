@@ -6,6 +6,16 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="MutuAlert - Centre de Commandement", page_icon="👮", layout="wide")
 
+# === HIDE SIDEBAR COMPLETELY ===
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] {display: none !important;}
+    section[data-testid="stSidebar"] {display: none !important;}
+    button[kind="header"] {display: none !important;}
+    .stApp > header {display: none !important;}
+</style>
+""", unsafe_allow_html=True)
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -146,22 +156,20 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     .footer-co {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: #0a0a0a;
+        text-align: center;
+        color: #444;
+        font-size: 0.75rem;
+        margin-top: 2rem;
+        padding: 1rem 0;
         border-top: 1px solid #1a1a1a;
-        padding: 0.5rem 1rem;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 100;
-        font-size: 0.7rem;
-        color: #555;
     }
-    .footer-co a { color: #555; text-decoration: none; }
-    .footer-co a:hover { color: #FF4B4B; }
+    .footer-co a {
+        color: #4B8BFF;
+        text-decoration: none;
+    }
+    .footer-co a:hover {
+        color: #FF4B4B;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -415,7 +423,7 @@ with st.expander("📜 JOURNAL D'ACTIVITE (AUDIT)"):
     else:
         st.info("Aucune activite enregistree")
 
-st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 
 if st.button("← RETOUR ACCUEIL"):
     st.switch_page("streamlit_app.py")
@@ -423,6 +431,7 @@ if st.button("← RETOUR ACCUEIL"):
 # Footer
 st.markdown("""
 <div class="footer-co">
-    Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> &copy; 2026 - Tous droits reserves
+    <b>MutuAlert</b> &copy; 2026 | Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> | Tous droits reserves<br>
+    <span style="color:#333;">Securite civique en temps reel</span>
 </div>
 """, unsafe_allow_html=True)

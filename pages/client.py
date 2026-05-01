@@ -4,6 +4,16 @@ from datetime import datetime
 
 st.set_page_config(page_title="MutuAlert - Alerte Urgence", page_icon="🚨", layout="centered")
 
+# === HIDE SIDEBAR COMPLETELY ===
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] {display: none !important;}
+    section[data-testid="stSidebar"] {display: none !important;}
+    button[kind="header"] {display: none !important;}
+    .stApp > header {display: none !important;}
+</style>
+""", unsafe_allow_html=True)
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,10 +24,40 @@ from app.modules.alerts import get_alert_color, get_alert_label
 
 init_db()
 
-# Read GPS from query params (set by JavaScript geolocation)
-query_params = st.query_params
-qp_lat = float(query_params.get("lat", 0.0)) if query_params.get("lat") else 0.0
-qp_lon = float(query_params.get("lon", 0.0)) if query_params.get("lon") else 0.0
+# ===============================
+# GPS FIX - Handle query params as lists
+# ===============================
+query = st.query_params
+if "lat" in query and "lon" in query:
+    try:
+        # st.query_params returns lists, not single values
+        lat_raw = query.get("lat", ["0"])
+        lon_raw = query.get("lon", ["0"])
+        # Extract first element if list
+        lat_str = lat_raw[0] if isinstance(lat_raw, (list, tuple)) else str(lat_raw)
+        lon_str = lon_raw[0] if isinstance(lon_raw, (list, tuple)) else str(lon_raw)
+        st.session_state.gps_lat = float(lat_str)
+        st.session_state.gps_lon = float(lon_str)
+        st.session_state.gps_loaded = True
+    except (ValueError, IndexError, TypeError):
+        st.session_state.gps_lat = 0.0
+        st.session_state.gps_lon = 0.0
+        st.session_state.gps_loaded = False
+    # Clear query params and reload clean URL
+    st.query_params.clear()
+    st.rerun()
+
+# Default session state
+if "gps_lat" not in st.session_state:
+    st.session_state.gps_lat = 0.0
+if "gps_lon" not in st.session_state:
+    st.session_state.gps_lon = 0.0
+if "gps_loaded" not in st.session_state:
+    st.session_state.gps_loaded = False
+
+# Use session state values
+lat_input = st.session_state.gps_lat
+lon_input = st.session_state.gps_lon
 
 st.markdown("""
 <style>
@@ -31,11 +71,6 @@ st.markdown("""
         70% { transform: scale(1.6); opacity: 0; }
         100% { transform: scale(1.6); opacity: 0; }
     }
-    @keyframes pulse-btn {
-        0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7), inset 0 0 30px rgba(255,0,0,0.3); }
-        50% { box-shadow: 0 0 0 25px rgba(255,0,0,0), inset 0 0 50px rgba(255,0,0,0.5); }
-        100% { box-shadow: 0 0 0 0 rgba(255,0,0,0), inset 0 0 30px rgba(255,0,0,0.3); }
-    }
     @keyframes heartbeat {
         0%, 100% { transform: scale(1); }
         14% { transform: scale(1.05); }
@@ -43,10 +78,10 @@ st.markdown("""
         42% { transform: scale(1.05); }
         70% { transform: scale(1); }
     }
-    @keyframes scan-down {
+    @keyframes scanline {
         0% { top: -5%; opacity: 0; }
-        10% { opacity: 1; }
-        90% { opacity: 1; }
+        10% { opacity: 0.3; }
+        90% { opacity: 0.3; }
         100% { top: 105%; opacity: 0; }
     }
     .client-bg {
@@ -60,28 +95,28 @@ st.markdown("""
         left: 0; right: 0;
         height: 2px;
         background: linear-gradient(90deg, transparent, rgba(255,75,75,0.3), transparent);
-        animation: scan-down 4s linear infinite;
+        animation: scanline 4s linear infinite;
         z-index: 0;
         pointer-events: none;
     }
     .client-header {
         text-align: center;
-        padding: 1rem 0;
-        border-bottom: 1px solid #222;
-        margin-bottom: 1rem;
+        padding: 1.5rem 0 1rem 0;
+        border-bottom: 2px solid #1a0a0a;
+        margin-bottom: 1.5rem;
     }
     .client-header h1 {
-        font-size: 1.8rem;
+        font-size: 2.2rem;
         font-weight: 900;
         color: #ff3333;
         text-transform: uppercase;
         letter-spacing: 6px;
         margin: 0;
-        text-shadow: 0 0 15px rgba(255,0,0,0.4);
+        text-shadow: 0 0 20px rgba(255,0,0,0.4);
     }
     .client-header p {
         color: #555;
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         letter-spacing: 3px;
         text-transform: uppercase;
         margin: 0.3rem 0 0 0;
@@ -121,6 +156,14 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 2px;
     }
+    .gps-status-ok {
+        color: #00ff88;
+        font-size: 0.8rem;
+    }
+    .gps-status-wait {
+        color: #FF8800;
+        font-size: 0.8rem;
+    }
     .status-ok {
         background: linear-gradient(135deg, #0a2a0a 0%, #1a3a1a 100%);
         border: 1px solid #00ff44;
@@ -142,49 +185,21 @@ st.markdown("""
     }
     .data-label { color: #888; }
     .data-value { color: #fff; font-weight: bold; }
-    .emergency-btn-container {
-        position: relative;
-        width: 240px;
-        height: 240px;
-        margin: 1.5rem auto;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .ring1 {
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        border: 3px solid rgba(255,0,0,0.25);
-        animation: pulse-ring 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-    }
-    .ring2 {
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        border: 2px solid rgba(255,0,0,0.15);
-        animation: pulse-ring2 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-        animation-delay: 0.6s;
-    }
     .footer-co {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: #0a0a0a;
+        text-align: center;
+        color: #444;
+        font-size: 0.75rem;
+        margin-top: 2rem;
+        padding: 1rem 0;
         border-top: 1px solid #1a1a1a;
-        padding: 0.5rem 1rem;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 100;
-        font-size: 0.7rem;
-        color: #555;
     }
-    .footer-co a { color: #555; text-decoration: none; }
-    .footer-co a:hover { color: #FF4B4B; }
+    .footer-co a {
+        color: #4B8BFF;
+        text-decoration: none;
+    }
+    .footer-co a:hover {
+        color: #FF4B4B;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -211,8 +226,8 @@ st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
 # === GPS LOCALISATION ===
 st.markdown('<div class="section-label-blue">2. Localisation GPS</div>', unsafe_allow_html=True)
 
-# Geolocation button that reloads page with coords in URL
-geo_html = f"""
+# Geolocation button - JS reloads page with query params
+geo_html = """
 <div class="gps-box">
     <button onclick="getGPS()" style="
         background: linear-gradient(135deg, #1a237e, #283593);
@@ -226,70 +241,80 @@ geo_html = f"""
         width: 100%;
         letter-spacing: 1px;
         text-transform: uppercase;
-    ">📍 Localiser ma position</button>
-    <div id="geo-status" style="margin-top:0.6rem; font-family:monospace; font-size:0.8rem; color:#888;">
-        Cliquez pour obtenir vos coordonnees GPS
+    ">📍 Localiser ma position GPS</button>
+    <div id="geo-status" style="margin-top:0.6rem; font-family:monospace; font-size:0.8rem;">
+        <span style="color:#666">Cliquez pour obtenir vos coordonnees GPS</span>
     </div>
 </div>
 <script>
-function getGPS() {{
+function getGPS() {
     const s = document.getElementById('geo-status');
-    if (!navigator.geolocation) {{ s.innerHTML = '<span style="color:#ff4444">Geolocalisation non supportee</span>'; return; }}
-    s.innerHTML = '<span style="color:#4B8BFF"> Acquisition satellites...</span>';
+    if (!navigator.geolocation) { s.innerHTML = '<span style="color:#ff4444">Geolocalisation non supportee</span>'; return; }
+    s.innerHTML = '<span style="color:#4B8BFF"> Acquisition satellites... Veuillez patienter</span>';
     navigator.geolocation.getCurrentPosition(
-        function(p) {{
+        function(p) {
             const lat = p.coords.latitude.toFixed(6);
             const lon = p.coords.longitude.toFixed(6);
             const acc = Math.round(p.coords.accuracy);
             s.innerHTML = '<span style="color:#00ff88">✓ POSITION ACQUISE</span><br>' +
                 '<span style="color:#aaa">LAT: ' + lat + ' | LON: ' + lon + ' | ACC: ±' + acc + 'm</span><br>' +
-                '<span style="color:#4B8BFF; font-size:0.75rem;">Rechargement de la page...</span>';
-            setTimeout(function() {{
-                const url = new URL(window.location.href);
-                url.searchParams.set('lat', lat);
-                url.searchParams.set('lon', lon);
-                window.location.href = url.toString();
-            }}, 800);
-        }},
-        function(e) {{
+                '<span style="color:#4B8BFF; font-size:0.75rem;">Chargement...</span>';
+            // Build URL preserving Streamlit params
+            const url = new URL(window.location.href);
+            // Remove existing lat/lon
+            url.searchParams.delete('lat');
+            url.searchParams.delete('lon');
+            // Add new values
+            url.searchParams.set('lat', lat);
+            url.searchParams.set('lon', lon);
+            window.location.href = url.toString();
+        },
+        function(e) {
             let m='Erreur GPS. ';
-            if(e.code==1) m+='Permission refusee.';
-            else if(e.code==2) m+='Signal indisponible.';
-            else if(e.code==3) m+='Delai depasse.';
+            if(e.code==1) m+='Permission refusee par le navigateur.';
+            else if(e.code==2) m+='Signal GPS indisponible.';
+            else if(e.code==3) m+='Delai depasse. Reessayez.';
             s.innerHTML = '<span style="color:#ff4444">' + m + '</span>';
-        }},
-        {{enableHighAccuracy:true, timeout:15000, maximumAge:0}}
+        },
+        {enableHighAccuracy:true, timeout:15000, maximumAge:0}
     );
-}}
-// Auto-fill display
-const url = new URL(window.location.href);
-if (url.searchParams.has('lat') && url.searchParams.has('lon')) {{
-    document.getElementById('geo-status').innerHTML = 
-        '<span style="color:#00ff88">✓ POSITION CHARGEE</span><br>' +
-        '<span style="color:#aaa">LAT: ' + url.searchParams.get('lat') + ' | LON: ' + url.searchParams.get('lon') + '</span>';
-}}
+}
 </script>
 """
 st.components.v1.html(geo_html, height=140)
 
-# Manual coords - pre-filled from query params
-st.markdown("<p style='color:#444; font-size:0.7rem; text-align:center; margin:0.5rem 0;'>Ou saisissez manuellement :</p>", unsafe_allow_html=True)
+# Display loaded coordinates
+if st.session_state.gps_loaded and lat_input != 0.0 and lon_input != 0.0:
+    st.success(f"✓ Position chargee : LAT {lat_input:.6f} | LON {lon_input:.6f}")
+else:
+    st.info("📍 Cliquez sur le bouton ci-dessus pour localiser votre position")
+
+# Manual fallback
+st.markdown("<p style='color:#444; font-size:0.7rem; text-align:center; margin:0.5rem 0;'>Saisie manuelle (si GPS echoue) :</p>", unsafe_allow_html=True)
 c1, c2 = st.columns(2)
 with c1:
-    lat_input = st.number_input("LATITUDE", value=qp_lat, format="%.6f", step=0.000001, key="man_lat")
+    manual_lat = st.number_input("LATITUDE", value=lat_input, format="%.6f", step=0.000001, key="manual_lat")
 with c2:
-    lon_input = st.number_input("LONGITUDE", value=qp_lon, format="%.6f", step=0.000001, key="man_lon")
+    manual_lon = st.number_input("LONGITUDE", value=lon_input, format="%.6f", step=0.000001, key="manual_lon")
 
-# Show coords status
+# Update session state with manual values
+if manual_lat != lat_input or manual_lon != lon_input:
+    st.session_state.gps_lat = manual_lat
+    st.session_state.gps_lon = manual_lon
+    lat_input = manual_lat
+    lon_input = manual_lon
+
+# Coords display boxes
 co1, co2, co3 = st.columns(3)
 with co1:
     st.markdown(f'<div class="gps-box"><div class="gps-label">LATITUDE</div><div class="gps-coord">{lat_input:.6f}</div></div>', unsafe_allow_html=True)
 with co2:
     st.markdown(f'<div class="gps-box"><div class="gps-label">LONGITUDE</div><div class="gps-coord">{lon_input:.6f}</div></div>', unsafe_allow_html=True)
 with co3:
-    valid_str = "VALIDE" if validate_coordinates(lat_input, lon_input) else "INVALIDE"
-    valid_color = "#00ff88" if validate_coordinates(lat_input, lon_input) else "#ff4444"
-    st.markdown(f'<div class="gps-box"><div class="gps-label">STATUT</div><div class="gps-coord" style="color:{valid_color};">{valid_str}</div></div>', unsafe_allow_html=True)
+    is_valid = validate_coordinates(lat_input, lon_input)
+    v_color = "#00ff88" if is_valid else "#ff4444"
+    v_text = "VALIDE" if is_valid else "INVALIDE"
+    st.markdown(f'<div class="gps-box"><div class="gps-label">STATUT GPS</div><div class="gps-coord" style="color:{v_color};">{v_text}</div></div>', unsafe_allow_html=True)
 
 st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
 
@@ -310,9 +335,17 @@ has_valid = validate_coordinates(lat_input, lon_input)
 st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 st.markdown('<div class="section-label">4. Envoyer l\'alerte</div>', unsafe_allow_html=True)
 
-if st.button("ALERTE\nURGENCE", key="big_red_btn", type="primary", use_container_width=False, disabled=not has_valid):
+# Visual rings
+st.markdown("""
+<div style="position:relative; width:260px; height:260px; margin:1rem auto; display:flex; align-items:center; justify-content:center;">
+    <div style="position:absolute; width:100%; height:100%; border-radius:50%; border:3px solid rgba(255,0,0,0.2); animation:pulse-ring 2.5s infinite;"></div>
+    <div style="position:absolute; width:100%; height:100%; border-radius:50%; border:2px solid rgba(255,0,0,0.15); animation:pulse-ring2 2.5s infinite;"></div>
+</div>
+""", unsafe_allow_html=True)
+
+if st.button("ALERTE\nURGENCE", key="big_red_btn", type="primary", disabled=not has_valid):
     if not has_valid:
-        st.error("Coordonnees invalides. Localisez-vous ou saisissez les coordonnees.")
+        st.error("❌ Coordonnees invalides. Localisez-vous ou saisissez les coordonnees GPS.")
     else:
         with st.spinner("TRANSMISSION EN COURS..."):
             try:
@@ -364,16 +397,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Visual rings around button
-st.markdown("""
-<div class="emergency-btn-container">
-    <div class="ring1"></div>
-    <div class="ring2"></div>
-</div>
-""", unsafe_allow_html=True)
-
 if not has_valid:
-    st.warning("⚠️ Localisez votre position ou saisissez les coordonnees GPS avant d'envoyer.")
+    st.warning("⚠️ Appuyez sur 'Localiser ma position' ou saisissez les coordonnees GPS avant d'envoyer.")
 
 # === SUCCESS ===
 if st.session_state.alert_sent:
@@ -391,11 +416,13 @@ if st.session_state.alert_sent:
     if st.button("NOUVELLE ALERTE", type="secondary"):
         st.session_state.alert_sent = False
         st.session_state.alert_id = None
-        # Clear query params
+        st.session_state.gps_lat = 0.0
+        st.session_state.gps_lon = 0.0
+        st.session_state.gps_loaded = False
         st.query_params.clear()
         st.rerun()
 
-st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 
 if st.button("← RETOUR ACCUEIL", key="back_home"):
     st.switch_page("streamlit_app.py")
@@ -403,6 +430,7 @@ if st.button("← RETOUR ACCUEIL", key="back_home"):
 # Footer
 st.markdown("""
 <div class="footer-co">
-    Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> &copy; 2026 - Tous droits reserves
+    <b>MutuAlert</b> &copy; 2026 | Powered by <a href="https://www.coitechs.com" target="_blank">C&O Itech Solution</a> | Tous droits reserves<br>
+    <span style="color:#333;">Securite civique en temps reel</span>
 </div>
 """, unsafe_allow_html=True)
