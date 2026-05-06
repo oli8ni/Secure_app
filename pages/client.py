@@ -21,29 +21,33 @@ from app.modules.alerts import get_alert_color, get_alert_label
 
 init_db()
 
-# =========================
-# INIT SESSION STATE
-# =========================
+# ========================================
+# GPS READ FROM QUERY PARAMS (JS writes these)
+# ========================================
+params = st.query_params
+
+if params.get("lat") and params.get("lon"):
+    try:
+        lr = params.get("lat")
+        lo = params.get("lon")
+        if isinstance(lr, (list, tuple)) and len(lr) > 0: lr = lr[0]
+        if isinstance(lo, (list, tuple)) and len(lo) > 0: lo = lo[0]
+        lat_parsed = float(str(lr))
+        lon_parsed = float(str(lo))
+        if abs(lat_parsed) > 0.001 and abs(lon_parsed) > 0.001:
+            st.session_state.gps_lat = lat_parsed
+            st.session_state.gps_lon = lon_parsed
+            st.session_state.gps_loaded = True
+            st.session_state.gps_source = str(params.get("src", "gps")) if not isinstance(params.get("src"), (list, tuple)) else str(params.get("src", ["gps"])[0])
+    except Exception:
+        pass
+
+# Init defaults
 for key, val in [("gps_lat", 0.0), ("gps_lon", 0.0), ("gps_loaded", False),
                  ("gps_source", ""), ("alert_sent", False), ("alert_id", None),
                  ("alert_lat", 0.0), ("alert_lon", 0.0)]:
     if key not in st.session_state:
         st.session_state[key] = val
-
-# Read from query params (set by JS when page reloads)
-q = st.query_params
-if q.get("lat") and q.get("lon"):
-    try:
-        lr = q.get("lat")
-        lo = q.get("lon")
-        if isinstance(lr, (list, tuple)) and len(lr) > 0: lr = lr[0]
-        if isinstance(lo, (list, tuple)) and len(lo) > 0: lo = lo[0]
-        st.session_state.gps_lat = float(str(lr))
-        st.session_state.gps_lon = float(str(lo))
-        st.session_state.gps_loaded = True
-        st.session_state.gps_source = str(q.get("src", "gps")) if not isinstance(q.get("src"), (list, tuple)) else str(q.get("src", ["gps"])[0])
-    except Exception:
-        pass
 
 lat_val = float(st.session_state.gps_lat)
 lon_val = float(st.session_state.gps_lon)
@@ -51,9 +55,9 @@ lon_val = float(st.session_state.gps_lon)
 station = get_default_station()
 station_name = station['name'] if station is not None else "Police"
 
-# =========================
+# ========================================
 # STYLES
-# =========================
+# ========================================
 st.markdown("""
 <style>
     @keyframes heartbeat { 0%,100%{transform:scale(1)} 14%{transform:scale(1.05)} 28%{transform:scale(1)} 42%{transform:scale(1.05)} 70%{transform:scale(1)} }
@@ -74,41 +78,40 @@ st.markdown("""
     .fc a{color:#4B8BFF;text-decoration:none}
     .gps-ok{color:#0f8;font-size:.9rem;font-weight:bold}
     .gps-warn{color:#f80;font-size:.85rem}
-    .gps-err{color:#f44;font-size:.85rem}
     .manual-box{background:linear-gradient(145deg,#1a1a2e,#0d0d1a);border:1px solid #333;border-radius:8px;padding:1rem;margin-top:.5rem}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="ch"><h1>🚨 MUTU ALERT</h1><p>Alerte d\'urgence - Envoyez votre position</p></div>', unsafe_allow_html=True)
 
-# =========================
-# TYPE
-# =========================
+# ========================================
+# TYPE D'ALERTE
+# ========================================
 st.markdown('<div class="sl">1. Type d\'alerte</div>', unsafe_allow_html=True)
 alert_type = st.segmented_control("", ["danger","medical","fire","suspicious","other"],
     format_func=lambda x:{"danger":"🆘 DANGER","medical":"🏥 MEDICAL","fire":"🔥 INCENDIE","suspicious":"👁 SUSPECT","other":"⚠️ AUTRE"}.get(x,x), default="danger")
 
 st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
 
-# =========================
-# GPS
-# =========================
+# ========================================
+# GPS LOCALISATION
+# ========================================
 st.markdown('<div class="slb">2. Localisation GPS</div>', unsafe_allow_html=True)
 
-# Method 1: Browser GPS
+# Browser GPS - JavaScript writes to query params, page reloads
 gps_html = """
 <div class="gb" id="gps-box">
     <button onclick="getGPS()" style="background:linear-gradient(135deg,#1a237e,#283593);color:white;border:none;padding:.8rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:bold;cursor:pointer;width:100%;letter-spacing:1px;text-transform:uppercase">
         📍 LOCALISER MA POSITION (GPS)
     </button>
-    <div id="gps-out" style="margin-top:.8rem;font-family:monospace;font-size:.85rem;min-height:60px">
-        <span style="color:#666">Cliquez pour obtenir vos coordonnees GPS via le navigateur</span>
+    <div id="gps-out" style="margin-top:.8rem;font-family:monospace;font-size:.85rem;min-height:50px">
+        <span style="color:#666">Cliquez pour obtenir vos coordonnees GPS</span>
     </div>
 </div>
 <script>
 function getGPS(){
     var out=document.getElementById('gps-out');
-    out.innerHTML='<span style="color:#4B8BFF">▶ Acquisition GPS en cours... Patientez</span>';
+    out.innerHTML='<span style="color:#4B8BFF">▶ Acquisition GPS en cours...</span>';
     if(!navigator.geolocation){out.innerHTML='<span style="color:#f44">✗ Geolocalisation non supportee</span>';return;}
     navigator.geolocation.getCurrentPosition(
         function(pos){
@@ -116,15 +119,15 @@ function getGPS(){
             var lon=pos.coords.longitude.toFixed(6);
             var acc=Math.round(pos.coords.accuracy);
             out.innerHTML='<span style="color:#0f8">✓ GPS OK</span><br><span style="color:#ccc">LAT: '+lat+' | LON: '+lon+' | +/-'+acc+'m</span><br><span style="color:#4B8BFF">Chargement...</span>';
-            setTimeout(function(){
-                var url=new URL(window.location.href);
-                url.searchParams.set('lat',lat);url.searchParams.set('lon',lon);url.searchParams.set('src','gps');
-                window.location.replace(url.toString());
-            },500);
+            var url=new URL(window.location.href);
+            url.searchParams.set('lat',lat);
+            url.searchParams.set('lon',lon);
+            url.searchParams.set('src','gps');
+            window.location.href=url.toString();
         },
         function(err){
             var msg='Erreur GPS: ';
-            if(err.code==1)msg+='Permission refusee. Activez la geolocalisation dans votre navigateur.';
+            if(err.code==1)msg+='Permission refusee.';
             else if(err.code==2)msg+='Signal indisponible.';
             else msg+='Delai depasse.';
             out.innerHTML='<span style="color:#f80">⚠ '+msg+'<br>Essayez la methode IP ci-dessous.</span>';
@@ -134,43 +137,41 @@ function getGPS(){
 }
 </script>
 """
-st.components.v1.html(gps_html, height=170)
+st.components.v1.html(gps_html, height=150)
 
-# Method 2: IP Geolocation (fallback) - JavaScript fetch
+# IP Geolocation fallback
 st.markdown("<div style='height:.3rem'></div>", unsafe_allow_html=True)
 ip_html = """
 <div class="gb" style="border-color:#2a2a4a">
-    <button onclick="getIPLocation()" style="background:linear-gradient(135deg,#2a4a2a,#1a3a1a);color:#0f8;border:1px solid #0f8;padding:.8rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:bold;cursor:pointer;width:100%;letter-spacing:1px;text-transform:uppercase">
+    <button onclick="getIPLoc()" style="background:linear-gradient(135deg,#2a4a2a,#1a3a1a);color:#0f8;border:1px solid #0f8;padding:.8rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:bold;cursor:pointer;width:100%;letter-spacing:1px;text-transform:uppercase">
         🌐 LOCALISER PAR IP (Fallback)
     </button>
-    <div id="ip-out" style="margin-top:.8rem;font-family:monospace;font-size:.85rem;min-height:50px">
-        <span style="color:#666">Si le GPS echoue, cliquez ici pour une position approximative</span>
+    <div id="ip-out" style="margin-top:.8rem;font-family:monospace;font-size:.85rem;min-height:40px">
+        <span style="color:#666">Si GPS echoue, cliquez ici</span>
     </div>
 </div>
 <script>
-function getIPLocation(){
+function getIPLoc(){
     var out=document.getElementById('ip-out');
-    out.innerHTML='<span style="color:#4B8BFF">▶ Recherche position par IP...</span>';
+    out.innerHTML='<span style="color:#4B8BFF">▶ Recherche par IP...</span>';
     fetch('https://ipapi.co/json/')
         .then(function(r){return r.json();})
         .then(function(data){
             if(data.latitude && data.longitude){
                 var lat=data.latitude.toFixed(6),lon=data.longitude.toFixed(6);
-                out.innerHTML='<span style="color:#0f8">✓ Position IP OK (ville)</span><br><span style="color:#ccc">LAT: '+lat+' | LON: '+lon+' | '+data.city+', '+data.country_name+'</span><br><span style="color:#4B8BFF">Chargement...</span>';
-                setTimeout(function(){
-                    var url=new URL(window.location.href);
-                    url.searchParams.set('lat',lat);url.searchParams.set('lon',lon);url.searchParams.set('src','ip');
-                    window.location.replace(url.toString());
-                },500);
-            }else{out.innerHTML='<span style="color:#f44">✗ IP geolocation indisponible. Saisissez manuellement.</span>';}
+                out.innerHTML='<span style="color:#0f8">✓ IP OK</span><br><span style="color:#ccc">LAT: '+lat+' | LON: '+lon+' | '+data.city+'</span><br><span style="color:#4B8BFF">Chargement...</span>';
+                var url=new URL(window.location.href);
+                url.searchParams.set('lat',lat);url.searchParams.set('lon',lon);url.searchParams.set('src','ip');
+                window.location.href=url.toString();
+            }else{out.innerHTML='<span style="color:#f44">✗ IP indisponible. Saisissez manuellement.</span>';}
         })
         .catch(function(e){out.innerHTML='<span style="color:#f44">✗ Erreur reseau. Saisissez manuellement.</span>';});
 }
 </script>
 """
-st.components.v1.html(ip_html, height=160)
+st.components.v1.html(ip_html, height=140)
 
-# GPS status display
+# Status display
 c1, c2 = st.columns(2)
 with c1:
     if st.session_state.gps_loaded and abs(lat_val) > 0.001:
@@ -197,7 +198,7 @@ with c2:
 if manual_lat != lat_val: st.session_state.gps_lat = manual_lat; lat_val = manual_lat
 if manual_lon != lon_val: st.session_state.gps_lon = manual_lon; lon_val = manual_lon
 
-# Display
+# Display boxes
 nc1, nc2, nc3 = st.columns(3)
 with nc1: st.markdown(f'<div class="gb"><div class="gl">LAT</div><div class="gc">{lat_val:.6f}</div></div>', unsafe_allow_html=True)
 with nc2: st.markdown(f'<div class="gb"><div class="gl">LON</div><div class="gc">{lon_val:.6f}</div></div>', unsafe_allow_html=True)
@@ -208,16 +209,16 @@ with nc3:
 
 st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
 
-# =========================
+# ========================================
 # DETAILS
-# =========================
+# ========================================
 st.markdown('<div class="slb">3. Details (optionnels)</div>', unsafe_allow_html=True)
 desc = st.text_area("", placeholder="Decrivez la situation...", height=70, key="desc_field", label_visibility="collapsed")
 phone = st.text_input("Tel contact (optionnel)", placeholder="+243 XX XXX XXXX", key="phone_field")
 
-# =========================
+# ========================================
 # EMERGENCY BUTTON
-# =========================
+# ========================================
 st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 st.markdown('<div class="sl">4. Envoyer l\'alerte</div>', unsafe_allow_html=True)
 
@@ -264,9 +265,9 @@ st.markdown("""
 if not has_valid:
     st.warning("⚠️ Localisez-vous (GPS ou IP) ou saisissez les coordonnees GPS manuellement.")
 
-# =========================
+# ========================================
 # SUCCESS
-# =========================
+# ========================================
 if st.session_state.alert_sent:
     st.balloons()
     st.markdown(f"""

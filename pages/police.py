@@ -24,7 +24,8 @@ from app.modules.database import (init_db, get_all_alerts, update_alert_status, 
                                    get_hospitals, add_hospital, delete_hospital,
                                    import_stations_from_geojson, import_hospitals_from_geojson)
 from app.modules.auth import authenticate_user
-from app.modules.geo import validate_coordinates, generate_route_points
+from app.modules.geo import validate_coordinates
+from app.modules.routing import get_route
 from app.modules.alerts import get_alert_color, get_alert_label, format_time_ago
 from streamlit_folium import st_folium
 
@@ -62,6 +63,7 @@ st.markdown("""
     .hospital-emergency{border-color:#f80}
     .upload-box{background:linear-gradient(145deg,#0d0d1a,#141428);border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:1rem}
     .select-station{background:linear-gradient(145deg,#1a1a2e,#0d0d1a);border:1px solid #4B8BFF;border-radius:8px;padding:1rem;margin:1rem 0}
+    .route-info{background:linear-gradient(145deg,#0d0d1a,#141428);border:1px solid #FF8800;border-radius:8px;padding:.8rem;margin:.5rem 0;font-size:.85rem;color:#ccc}
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,7 +121,7 @@ if show_status != "all":
     df_alerts = df_alerts[df_alerts['status'] == show_status]
 if 'zoom_to' not in st.session_state: st.session_state.zoom_to = None
 
-# ===== STATION SELECTION (critical for routes) =====
+# ===== STATION SELECTION =====
 st.markdown('<div class="select-station">', unsafe_allow_html=True)
 st.markdown("<h4 style='color:#4B8BFF;margin:0 0 .5rem 0'>🏢 Station de Police Active</h4>", unsafe_allow_html=True)
 
@@ -131,28 +133,6 @@ selected_id = st.selectbox("Choisir le poste pour les interventions", options=li
     format_func=lambda x: station_options.get(x, "?"), index=list(station_options.keys()).index(st.session_state.selected_station_id) if st.session_state.selected_station_id in station_options else 0)
 st.session_state.selected_station_id = selected_id
 
-# Locate current station button
-loc_col1, loc_col2 = st.columns(2)
-with loc_col1:
-    st.markdown("<span style='color:#888;font-size:.8rem'>📍 Localiser ce poste automatiquement :</span>", unsafe_allow_html=True)
-with loc_col2:
-    if st.button("📍 LOCALISER CE POSTE", use_container_width=True, key="loc_station_btn"):
-        # JavaScript to get browser location and update station
-        st.markdown("""
-        <script>
-        if(navigator.geolocation){
-            navigator.geolocation.getCurrentPosition(
-                function(pos){
-                    var lat=pos.coords.latitude.toFixed(6),lon=pos.coords.longitude.toFixed(6);
-                    alert('Position du poste detectee:\nLAT: '+lat+'\nLON: '+lon+'\n\nSaisissez ces valeurs dans le formulaire ci-dessous pour mettre a jour ce poste.');
-                },
-                function(err){alert('GPS indisponible. Saisissez manuellement.');}
-            );
-        }else{alert('Geolocalisation non supportee');}
-        </script>
-        """, unsafe_allow_html=True)
-        st.info("Les coordonnees s'affichent dans une popup. Saisissez-les dans 'Editer position' ci-dessous.")
-
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Get active station coords
@@ -162,7 +142,7 @@ if active_station is not None:
     police_lon = float(active_station['longitude'])
     police_name = active_station['name']
 else:
-    police_lat, police_lon = 5.36, -4.0083
+    police_lat, police_lon = -4.3250, 15.3222
     police_name = "Police"
 
 # ===== METRICS =====
@@ -178,7 +158,7 @@ with m4: st.markdown(f'<div class="metric-panel"><div class="metric-num" style="
 
 st.divider()
 
-# ===== UPLOAD & MANAGE TABS =====
+# ===== TABS =====
 tab_map, tab_stations, tab_hospitals = st.tabs(["🗺 Carte & Alertes", "🏢 Postes de Police", "🏥 Hopitaux"])
 
 with tab_stations:
@@ -278,7 +258,7 @@ with tab_map:
     left, right = st.columns([3, 2])
     
     with left:
-        st.markdown("<div style='color:#888;font-size:.75rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:.5rem'>🗺 Carte Temps Reel - Depuis : " + police_name + "</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='color:#888;font-size:.75rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:.5rem'>🗺 Carte - Depuis : {police_name}</div>", unsafe_allow_html=True)
         
         if st.session_state.zoom_to and len(df_alerts)>0:
             za = df_alerts[df_alerts['id']==st.session_state.zoom_to]
@@ -290,18 +270,18 @@ with tab_map:
         
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_level, tiles="CartoDB dark_matter")
         
-        # Active station marker (large blue)
+        # Active station
         folium.Marker([police_lat, police_lon], icon=folium.Icon(color='darkblue', icon='shield', prefix='fa'),
             popup=f"<b>Poste actif: {police_name}</b>", tooltip=f"🚔 {police_name}").add_to(m)
         folium.Circle([police_lat, police_lon], radius=400, fill=True, color='#4B8BFF', fill_color='#4B8BFF', fill_opacity=0.1).add_to(m)
         
-        # Hospitals on map
+        # Hospitals
         for _, hos in hospitals.iterrows():
             folium.Marker([hos['latitude'], hos['longitude']], 
                 icon=folium.Icon(color='pink', icon='plus', prefix='fa'),
                 popup=f"Hopital: {hos['name']}", tooltip=f"🏥 {hos['name']}").add_to(m)
         
-        # Alert markers
+        # Alert markers + OSRM routes
         for idx, alert in df_alerts.iterrows():
             color = get_alert_color(alert['alert_type'])
             label = get_alert_label(alert['alert_type'])
@@ -319,6 +299,7 @@ with tab_map:
                     tooltip=f"🔴 #{alert['id']} {label}").add_to(m)
             elif status == 'in_progress':
                 folium.Marker([lat, lon], icon=folium.Icon(color='orange', icon='car', prefix='fa'), tooltip=f"🟡 #{alert['id']} En cours").add_to(m)
+                # Show stored OSRM route if exists
                 if alert['route_data']:
                     try:
                         route = json.loads(alert['route_data'])
@@ -328,10 +309,11 @@ with tab_map:
             else:
                 folium.Marker([lat, lon], icon=folium.Icon(color='green', icon='check', prefix='fa'), tooltip=f"🟢 #{alert['id']} Resolu").add_to(m)
         
-        # Routes from SELECTED station to active alerts
+        # OSRM routes from selected station to active alerts
         for idx, alert in df_alerts[df_alerts['status']=='active'].iterrows():
-            route_pts = generate_route_points(police_lat, police_lon, alert['latitude'], alert['longitude'], num_points=20)
-            folium.PolyLine(route_pts, color='#FF0000', weight=2, opacity=0.4, dash_array='5,10').add_to(m)
+            route_pts, dist_km, dur_min = get_route(police_lat, police_lon, alert['latitude'], alert['longitude'])
+            if route_pts:
+                folium.PolyLine(route_pts, color='#FF0000', weight=3, opacity=0.5, dash_array='5,10').add_to(m)
         
         st_folium(m, width=700, height=550, returned_objects=[])
     
@@ -354,31 +336,30 @@ with tab_map:
                     if st.button("🔍 ZOOM", key=f"zoom_{alert['id']}", use_container_width=True): st.session_state.zoom_to=alert['id']; st.rerun()
                 with c2:
                     if alert['status']=='active' and st.button("🚀 PRENDRE", key=f"take_{alert['id']}", use_container_width=True):
-                        route = generate_route_points(police_lat, police_lon, alert['latitude'], alert['longitude'])
-                        add_route_data(alert['id'], json.dumps(route), user['username'])
+                        route_pts, dist_km, dur_min = get_route(police_lat, police_lon, alert['latitude'], alert['longitude'])
+                        if route_pts:
+                            add_route_data(alert['id'], json.dumps(route_pts), user['username'])
                         update_alert_status(alert['id'], 'in_progress', user['username'])
-                        st.toast("Intervention lancee!"); time.sleep(.3); st.rerun()
+                        st.toast(f"Intervention lancee! {dist_km:.1f}km / {dur_min:.0f}min" if dist_km else "Intervention lancee!"); time.sleep(.3); st.rerun()
                 with c3:
                     if alert['status']=='in_progress' and st.button("✅ RESOUDRE", key=f"resolve_{alert['id']}", use_container_width=True):
                         update_alert_status(alert['id'], 'resolved', user['username'])
                         st.toast("Resolu!"); time.sleep(.3); st.rerun()
                 with c4:
                     if st.button("🗺 ROUTE", key=f"route_{alert['id']}", use_container_width=True):
-                        route = generate_route_points(police_lat, police_lon, alert['latitude'], alert['longitude'])
-                        add_route_data(alert['id'], json.dumps(route), user['username'])
-                        st.toast("Route calculee"); st.rerun()
+                        route_pts, dist_km, dur_min = get_route(police_lat, police_lon, alert['latitude'], alert['longitude'])
+                        if route_pts:
+                            add_route_data(alert['id'], json.dumps(route_pts), user['username'])
+                            st.toast(f"Route: {dist_km:.1f}km, {dur_min:.0f}min")
+                        else:
+                            st.toast("Route calculee (fallback)")
+                        st.rerun()
 
 st.divider()
 with st.expander("📜 JOURNAL D'ACTIVITE (AUDIT)"):
     from app.modules.database import get_db
     with get_db() as conn:
-        logs = pd.read_sql_query("""
-            SELECT al.*, a.latitude, a.longitude 
-            FROM alert_logs al
-            JOIN alerts a ON al.alert_id = a.id
-            ORDER BY al.timestamp DESC
-            LIMIT 50
-        """, conn)
+        logs = pd.read_sql_query("SELECT al.*, a.latitude, a.longitude FROM alert_logs al JOIN alerts a ON al.alert_id=a.id ORDER BY al.timestamp DESC LIMIT 50", conn)
     if len(logs)>0: st.dataframe(logs[['timestamp','alert_id','action','performed_by']], use_container_width=True, hide_index=True)
     else: st.info("Aucune activite")
 

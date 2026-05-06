@@ -18,7 +18,8 @@ st.markdown("""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.modules.database import init_db, get_default_station, get_station_by_id
-from app.modules.geo import validate_coordinates, generate_route_points
+from app.modules.geo import validate_coordinates
+from app.modules.routing import get_route
 from streamlit_folium import st_folium
 
 init_db()
@@ -42,7 +43,8 @@ station_name = station['name'] if station is not None else "Police"
 police_lat = float(station['latitude']) if station is not None else -4.3250
 police_lon = float(station['longitude']) if station is not None else 15.3222
 
-route_pts = generate_route_points(police_lat, police_lon, alert_lat, alert_lon, num_points=30)
+# Get real OSRM route
+route_pts, dist_km, dur_min = get_route(police_lat, police_lon, alert_lat, alert_lon)
 
 st.markdown("""
 <style>
@@ -56,17 +58,20 @@ st.markdown("""
     .footer-co a{color:#4B8BFF;text-decoration:none}
     .status-dot{display:inline-block;width:10px;height:10px;background:#0f8;border-radius:50%;margin-right:6px;animation:blink 1.5s infinite}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+    .progress-bar{background:#1a1a2e;border-radius:8px;height:20px;overflow:hidden;margin:1rem 0}
+    .progress-fill{background:linear-gradient(90deg,#4B8BFF,#0f8);height:100%;border-radius:8px;transition:width .5s}
     .eta-box{background:linear-gradient(145deg,#0d0d1a,#141428);border:1px solid #1a1a3a;border-radius:8px;padding:1rem;text-align:center;margin:1rem 0}
     .eta-time{font-size:2rem;font-weight:900;color:#4B8BFF}
     .eta-label{color:#666;font-size:.7rem;text-transform:uppercase;letter-spacing:2px}
-    .progress-bar{background:#1a1a2e;border-radius:8px;height:20px;overflow:hidden;margin:1rem 0}
-    .progress-fill{background:linear-gradient(90deg,#4B8BFF,#0f8);height:100%;border-radius:8px;transition:width .5s}
+    .route-real{background:linear-gradient(145deg,#0d0d1a,#141428);border:1px solid #0f8;border-radius:8px;padding:1rem;margin:1rem 0}
+    .route-real h4{color:#0f8;margin:0 0 .5rem 0}
+    .route-fallback{background:linear-gradient(145deg,#1a1a0a,#0d0d0a);border:1px solid #f80;border-radius:8px;padding:1rem;margin:1rem 0}
+    .route-fallback h4{color:#f80;margin:0 0 .5rem 0}
 </style>
 """, unsafe_allow_html=True)
 
 import random
 progress_pct = random.randint(25, 75)
-eta_min = random.randint(3, 12)
 
 st.markdown(f"""
 <div class="th">
@@ -74,12 +79,32 @@ st.markdown(f"""
     <div class="ts"><span class="status-dot"></span>Alerte #{alert_id} - Police en route depuis {station_name}</div>
 </div>""", unsafe_allow_html=True)
 
+# Route info
+if dist_km and dur_min:
+    st.markdown(f"""
+    <div class="route-real">
+        <h4>✅ Route reelle (OSRM - OpenStreetMap)</h4>
+        <div class="ir"><span class="il">Distance</span><span class="iv">{dist_km:.2f} km</span></div>
+        <div class="ir"><span class="il">Temps estime</span><span class="iv">{dur_min:.0f} minutes</span></div>
+        <div class="ir"><span class="il">Vitesse moyenne</span><span class="iv">{(dist_km/(dur_min/60)):.0f} km/h</span></div>
+        <div class="ir"><span class="il">Source</span><span class="iv" style="color:#0f8">OSRM - Routes reelles RDC</span></div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="route-fallback">
+        <h4>⚠ Route approximative (OSRM indisponible)</h4>
+        <p style="color:#888;font-size:.85rem">Le service de routage OSRM est temporairement inaccessible. L'itineraire affiche est une ligne directe approximative.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
 col1, col2 = st.columns([1, 2])
 
 with col1:
     st.markdown("<div class='eta-box'>", unsafe_allow_html=True)
-    st.markdown(f'<div class="eta-time">{eta_min}</div>', unsafe_allow_html=True)
-    st.markdown('<div class="eta-label">Minutes estimees</div>', unsafe_allow_html=True)
+    eta_display = int(dur_min * (1 - progress_pct/100)) if dur_min else random.randint(3, 12)
+    st.markdown(f'<div class="eta-time">{eta_display}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="eta-label">Minutes restantes estimees</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
     
     st.markdown(f"<div class='progress-bar'><div class='progress-fill' style='width:{progress_pct}%'></div></div>", unsafe_allow_html=True)
@@ -103,21 +128,28 @@ with col1:
 with col2:
     m = folium.Map(location=[(police_lat + alert_lat)/2, (police_lon + alert_lon)/2], zoom_start=13, tiles="CartoDB dark_matter")
     
+    # Poste de police
     folium.Marker([police_lat, police_lon], icon=folium.Icon(color='darkblue', icon='shield', prefix='fa'), tooltip=f"🚔 {station_name}").add_to(m)
     folium.Circle([police_lat, police_lon], radius=300, fill=True, color='#4B8BFF', fill_color='#4B8BFF', fill_opacity=0.08).add_to(m)
     
-    folium.CircleMarker([alert_lat, alert_lon], radius=15, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.5).add_to(m)
+    # Victime (pulsing red)
+    folium.CircleMarker([alert_lat, alert_lon], radius=15, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.5, popup="Votre position").add_to(m)
     folium.Circle([alert_lat, alert_lon], radius=120, fill=True, color='#FF0000', fill_color='#FF0000', fill_opacity=0.1).add_to(m)
     folium.Marker([alert_lat, alert_lon], icon=folium.Icon(color='red', icon='user', prefix='fa'), tooltip="👤 VOUS").add_to(m)
     
+    # Real OSRM route
     if route_pts:
         folium.PolyLine(route_pts, color='#FF8800', weight=5, opacity=0.9).add_to(m)
+        
+        # Police car position on route
         progress_idx = int(len(route_pts) * progress_pct / 100)
         if progress_idx >= len(route_pts): progress_idx = len(route_pts) - 1
         if progress_idx > 0:
             current_pos = route_pts[progress_idx]
             folium.Marker(current_pos, icon=folium.Icon(color='orange', icon='car', prefix='fa'), tooltip=f"🚔 POLICE - {progress_pct}%").add_to(m)
             folium.CircleMarker(current_pos, radius=10, fill=True, color='#FF8800', fill_color='#FF8800', fill_opacity=0.6).add_to(m)
+        
+        # Partie parcourue (verte)
         if progress_idx > 1:
             folium.PolyLine(route_pts[:progress_idx+1], color='#00CC88', weight=4, opacity=0.9).add_to(m)
     
