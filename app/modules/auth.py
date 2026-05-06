@@ -1,14 +1,25 @@
 import bcrypt
 import streamlit as st
 
+
 def hash_password(password: str) -> str:
+    """Génère un hash bcrypt sécurisé pour le mot de passe donné."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
+
 def verify_password(password: str, hashed: str) -> bool:
+    """Vérifie qu'un mot de passe correspond à son hash bcrypt."""
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
+
 def authenticate_user(username: str, password: str):
-    """Authenticate police user"""
+    """
+    Authentifie un agent de police.
+
+    Returns:
+        dict — données de l'agent si les credentials sont valides
+        None — sinon
+    """
     from app.modules.database import get_db
     with get_db() as conn:
         cursor = conn.cursor()
@@ -17,9 +28,9 @@ def authenticate_user(username: str, password: str):
             (username,)
         )
         user = cursor.fetchone()
-    
+
     if user and verify_password(password, user['password_hash']):
-        # Update last login
+        # Mise à jour de la date de dernière connexion
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -30,19 +41,24 @@ def authenticate_user(username: str, password: str):
         return dict(user)
     return None
 
+
 def login_required():
-    """Decorator to require login for police pages"""
+    """
+    Vérifie que l'utilisateur est connecté.
+    À appeler en début de chaque page protégée.
+    """
     if 'police_user' not in st.session_state or st.session_state.police_user is None:
         st.warning("Accès réservé. Veuillez vous connecter.")
         return False
     return True
 
+
 def logout():
-    """Clear session"""
-    if 'police_user' in st.session_state:
-        st.session_state.police_user = None
-    if 'auth_status' in st.session_state:
-        st.session_state.auth_status = None
+    """Déconnecte l'agent et nettoie la session."""
+    st.session_state.pop('police_user', None)
+    st.session_state.pop('auth_status', None)
+
 
 def get_current_user():
+    """Retourne l'agent connecté ou None."""
     return st.session_state.get('police_user')
