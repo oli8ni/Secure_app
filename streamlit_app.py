@@ -4,17 +4,32 @@ st.set_page_config(
     page_title="MutuAlert - Alertes Citoyennes",
     page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 # === HIDE SIDEBAR NAVIGATION COMPLETELY ===
-st.markdown("""
+hide_sidebar_css = """
 <style>
     [data-testid="stSidebarNav"] {display: none !important;}
     section[data-testid="stSidebar"] {display: none !important;}
     button[kind="header"] {display: none !important;}
     .stApp > header {display: none !important;}
+    [data-testid="stSidebarCollapsedControl"] {display: none !important;}
     .reportview-container .main .block-container {padding-top: 0 !important;}
+</style>
+<script>
+    setTimeout(function(){
+        var sb = document.querySelector('[data-testid="stSidebar"]');
+        if (sb) sb.style.display = 'none';
+        var sbc = document.querySelector('[data-testid="stSidebarCollapsedControl"]');
+        if (sbc) sbc.style.display = 'none';
+    }, 100);
+</script>
+"""
+st.markdown(hide_sidebar_css, unsafe_allow_html=True)
+
+st.markdown("""
+<style>
     @keyframes neonPulse {
         0%, 100% { box-shadow: 0 0 20px rgba(255,75,75,0.3), 0 0 40px rgba(255,0,0,0.1); }
         50% { box-shadow: 0 0 30px rgba(255,75,75,0.6), 0 0 60px rgba(255,0,0,0.3); }
@@ -150,6 +165,15 @@ st.markdown("""
     .footer-co a:hover {
         color: #FF4B4B;
     }
+    .pin-box {
+        max-width: 400px;
+        margin: 0 auto 2rem auto;
+        background: #0a0a14;
+        border: 1px solid #1a1a3a;
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -159,7 +183,7 @@ st.markdown("""
     <div class="hero-logo">🛡️ MUTU ALERT</div>
     <div class="hero-tagline">Protection Civique en Temps Reel</div>
     <div class="hero-desc">
-        <b>MutuAlert</b> connecte instantanement les citoyens en danger avec les forces de l'ordre. 
+        <b>MutuAlert</b> connecte instantanement les citoyens en danger avec les forces de l'ordre.
         Geolocalisation precise, suivi d'itineraires, reponse optimisee. Un clic. Une alerte. Une vie sauvee.
     </div>
 </div>
@@ -167,20 +191,33 @@ st.markdown("""
 
 # === STATS ===
 from app.modules.database import init_db, get_alert_stats
+
 init_db()
 stats = get_alert_stats()
 
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 with col_s1:
-    active = stats.get('active', 0)
-    st.markdown(f'<div class="stat-card"><div class="stat-num stat-red">{active}</div><div class="stat-lbl">Alertes Actives</div></div>', unsafe_allow_html=True)
+    active = stats.get("active", 0)
+    st.markdown(
+        f'<div class="stat-card"><div class="stat-num stat-red">{active}</div><div class="stat-lbl">Alertes Actives</div></div>',
+        unsafe_allow_html=True,
+    )
 with col_s2:
     total = sum(stats.values())
-    st.markdown(f'<div class="stat-card"><div class="stat-num stat-red">{total}</div><div class="stat-lbl">Total 24h</div></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="stat-card"><div class="stat-num stat-red">{total}</div><div class="stat-lbl">Total 24h</div></div>',
+        unsafe_allow_html=True,
+    )
 with col_s3:
-    st.markdown(f'<div class="stat-card"><div class="stat-num stat-blue">4.2</div><div class="stat-lbl">Min Response</div></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="stat-card"><div class="stat-num stat-blue">4.2</div><div class="stat-lbl">Min Response</div></div>',
+        unsafe_allow_html=True,
+    )
 with col_s4:
-    st.markdown(f'<div class="stat-card"><div class="stat-num stat-green">12</div><div class="stat-lbl">Districts</div></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="stat-card"><div class="stat-num stat-green">12</div><div class="stat-lbl">Districts</div></div>',
+        unsafe_allow_html=True,
+    )
 
 # === EMERGENCY BUTTON ===
 st.markdown("<div style='height:2rem;'></div>", unsafe_allow_html=True)
@@ -253,37 +290,11 @@ with c3:
     """, unsafe_allow_html=True)
 
 # === POLICE ACCESS (Hidden) ===
-if 'show_pin_input' not in st.session_state:
+if "show_pin_input" not in st.session_state:
     st.session_state.show_pin_input = False
-
-# Fixed position trigger - bottom right, very subtle
-st.markdown("""
-<style>
-    .police-lock {
-        position: fixed;
-        bottom: 12px;
-        right: 12px;
-        z-index: 9999;
-        background: rgba(10,10,20,0.8);
-        border: 1px solid #222;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 0.65rem;
-        color: #444;
-        cursor: pointer;
-        transition: all 0.3s;
-        font-family: monospace;
-    }
-    .police-lock:hover {
-        color: #666;
-        border-color: #333;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
 
-# Bottom right trigger using columns
 ft1, ft2, ft3 = st.columns([6, 1, 1])
 with ft3:
     if st.button("🔒", key="secure_trigger", help="Acces reserve"):
@@ -291,14 +302,12 @@ with ft3:
         st.rerun()
 
 if st.session_state.show_pin_input:
-    st.markdown("""
-    <div style='max-width:400px; margin:0 auto 2rem auto; background:#0a0a14; border:1px solid #1a1a3a; border-radius:12px; padding:1.5rem; text-align:center;'>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="pin-box">', unsafe_allow_html=True)
     st.markdown("<h4 style='color:#4B8BFF; margin-top:0;'>🔐 Acces Forces de l'Ordre</h4>", unsafe_allow_html=True)
     st.markdown("<p style='color:#666; font-size:0.85rem;'>Code d'acces requis</p>", unsafe_allow_html=True)
-    
+
     pin_input = st.text_input("", type="password", placeholder="PIN", key="pin_field", label_visibility="collapsed")
-    
+
     b1, b2 = st.columns(2)
     with b1:
         if st.button("Annuler", use_container_width=True):
