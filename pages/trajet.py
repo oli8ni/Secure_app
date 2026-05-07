@@ -117,7 +117,7 @@ if dist_km and dur_min:
         <h4>✅ Route reelle (OSRM - OpenStreetMap)</h4>
         <div class="ir"><span class="il">Distance</span><span class="iv">{dist_km:.2f} km</span></div>
         <div class="ir"><span class="il">Temps estime</span><span class="iv">{dur_min:.0f} minutes</span></div>
-        <div class="ir"><span class="il">Vitesse moyenne</span><span class="iv">{speed_kh:.0f} km/h</span></div>
+        <div class="ir"><span class="il">Vitesse moyenne</span><span class="iv">{speed_kmh:.0f} km/h</span></div>
         <div class="ir"><span class="il">Source</span><span class="iv" style="color:#0f8">OSRM - Routes reelles</span></div>
     </div>
     """, unsafe_allow_html=True)
