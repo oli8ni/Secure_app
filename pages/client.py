@@ -3,24 +3,24 @@ import time
 import requests
 from datetime import datetime
 
-st.set_page_config(page_title="MutuAlert - Alerte Urgence", page_icon="🚨", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="MutuAlert - Alerte Urgence",
+    page_icon="🚨",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
 # === HIDE SIDEBAR NAVIGATION COMPLETELY ===
 hide_sidebar_css = """
 <style>
-    /* Hide sidebar navigation */
     [data-testid="stSidebarNav"] {display: none !important;}
     section[data-testid="stSidebar"] {display: none !important;}
     button[kind="header"] {display: none !important;}
-    /* Hide hamburger menu */
     .stApp > header {display: none !important;}
-    /* Remove top padding */
-    .reportview-container .main .block-container {padding-top: 0 !important;}
-    /* Hide sidebar collapse control */
     [data-testid="stSidebarCollapsedControl"] {display: none !important;}
+    .reportview-container .main .block-container {padding-top: 0 !important;}
 </style>
 <script>
-    // Aggressive sidebar hide
     setTimeout(function(){
         var sb = document.querySelector('[data-testid="stSidebar"]');
         if (sb) sb.style.display = 'none';
@@ -40,6 +40,41 @@ from app.modules.alerts import get_alert_color, get_alert_label
 init_db()
 
 # ========================================
+# GPS VIA STREAMLIT-GEOLOCATION (package)
+# ========================================
+try:
+    from streamlit_geolocation import streamlit_geolocation
+    GEOLOCATION_AVAILABLE = True
+except ImportError:
+    GEOLOCATION_AVAILABLE = False
+
+# ========================================
+# QUICK-SELECT POSITIONS RDC
+# ========================================
+RDC_POSITIONS = {
+    "📍 Kinshasa - Gombe (Centre)": (-4.3010, 15.3130),
+    "📍 Kinshasa - Gare Central": (-4.3250, 15.3222),
+    "📍 Kinshasa - Kintambo": (-4.3340, 15.3100),
+    "📍 Kinshasa - Limete": (-4.3700, 15.3500),
+    "📍 Kinshasa - Bandal": (-4.3600, 15.2900),
+    "📍 Kinshasa - Lemba": (-4.3950, 15.2800),
+    "📍 Kinshasa - Matete": (-4.3850, 15.3400),
+    "📍 Kinshasa - Ngaba": (-4.4100, 15.3100),
+    "📍 Lubumbashi - Centre": (-11.6870, 27.5020),
+    "📍 Goma - Centre": (-1.6580, 29.2200),
+    "📍 Bukavu - Centre": (-2.5100, 28.8480),
+    "📍 Kisangani - Centre": (0.5167, 25.2000),
+    "📍 Mbuji-Mayi - Centre": (-6.1500, 23.6000),
+    "📍 Kananga - Centre": (-5.5400, 22.2900),
+    "📍 Kolwezi - Centre": (-10.7167, 25.4725),
+    "📍 Matadi - Centre": (-5.8167, 13.4500),
+    "📍 Likasi": (-10.9833, 26.7333),
+    "📍 Uvira": (-3.4000, 29.1333),
+    "📍 Butembo": (0.1500, 29.2833),
+    "📍 Tshikapa": (-6.4167, 20.8000),
+}
+
+# ========================================
 # SESSION STATE INITIALIZATION
 # ========================================
 def init_session_state():
@@ -52,6 +87,7 @@ def init_session_state():
         "alert_id": None,
         "alert_lat": 0.0,
         "alert_lon": 0.0,
+        "geolocation_used": False,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -59,34 +95,22 @@ def init_session_state():
 
 init_session_state()
 
-# Read query params (set by JS geolocation)
-params = st.query_params
-if params.get("lat") and params.get("lon") and not st.session_state.gps_loaded:
-    try:
-        lr = params.get("lat")
-        lo = params.get("lon")
-        if isinstance(lr, (list, tuple)) and len(lr) > 0:
-            lr = lr[0]
-        if isinstance(lo, (list, tuple)) and len(lo) > 0:
-            lo = lo[0]
-        lat_parsed = float(str(lr))
-        lon_parsed = float(str(lo))
-        if abs(lat_parsed) > 0.001 and abs(lon_parsed) > 0.001:
-            st.session_state.gps_lat = lat_parsed
-            st.session_state.gps_lon = lon_parsed
+# ========================================
+# GPS STREAMLIT-GEOLOCATION (méthode principale)
+# ========================================
+def process_geolocation_result(loc_data):
+    """Process streamlit-geolocation result dict."""
+    if loc_data and isinstance(loc_data, dict):
+        lat = loc_data.get("latitude")
+        lon = loc_data.get("longitude")
+        if lat and lon and abs(float(lat)) > 0.001:
+            st.session_state.gps_lat = float(lat)
+            st.session_state.gps_lon = float(lon)
             st.session_state.gps_loaded = True
-            src = params.get("src", "gps")
-            if isinstance(src, (list, tuple)):
-                src = src[0]
-            st.session_state.gps_source = str(src)
-    except Exception:
-        pass
-
-lat_val = float(st.session_state.gps_lat)
-lon_val = float(st.session_state.gps_lon)
-
-station = get_default_station()
-station_name = station["name"] if station is not None else "Police"
+            st.session_state.gps_source = f"gps ±{loc_data.get('accuracy', '?')}m"
+            st.session_state.geolocation_used = True
+            return True
+    return False
 
 # ========================================
 # STYLES
@@ -99,6 +123,13 @@ st.markdown("""
     @keyframes pulse-ring {
         0%{transform:scale(.85);opacity:1} 70%{transform:scale(1.5);opacity:0} 100%{transform:scale(1.5);opacity:0}
     }
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes glow {
+        0%,100%{box-shadow: 0 0 5px rgba(0,255,136,0.3)} 50%{box-shadow: 0 0 20px rgba(0,255,136,0.6)}
+    }
     .ch {text-align:center; padding:1.5rem 0 1rem; border-bottom:2px solid #1a0a0a; margin-bottom:1.5rem}
     .ch h1 {font-size:2.2rem; font-weight:900; color:#f33; text-transform:uppercase; letter-spacing:6px; margin:0; text-shadow:0 0 20px rgba(255,0,0,.4)}
     .ch p {color:#555; font-size:.85rem; letter-spacing:3px; text-transform:uppercase; margin:.3rem 0 0}
@@ -107,7 +138,7 @@ st.markdown("""
     .gb {background:linear-gradient(145deg,#0d0d1a,#111122); border:1px solid #1a1a3a; border-radius:10px; padding:1rem; text-align:center}
     .gc {font-family:'Courier New',monospace; color:#0f8; font-size:1.1rem; font-weight:bold}
     .gl {color:#555; font-size:.7rem; text-transform:uppercase; letter-spacing:2px}
-    .so {background:linear-gradient(135deg,#0a2a0a,#1a3a1a); border:1px solid #0f4; border-radius:10px; padding:1.2rem; margin:1rem 0}
+    .so {background:linear-gradient(135deg,#0a2a0a,#1a3a1a); border:1px solid #0f4; border-radius:10px; padding:1.2rem; margin:1rem 0; animation:slideIn .5s ease}
     .so h3 {color:#0f8; margin-top:0; font-size:1.1rem}
     .dr {display:flex; justify-content:space-between; padding:.4rem 0; border-bottom:1px solid #1a3a1a; font-size:.85rem}
     .dl {color:#888} .dv {color:#fff; font-weight:bold}
@@ -116,6 +147,11 @@ st.markdown("""
     .gps-ok {color:#0f8; font-size:.9rem; font-weight:bold}
     .gps-warn {color:#f80; font-size:.85rem}
     .manual-box {background:linear-gradient(145deg,#1a1a2e,#0d0d1a); border:1px solid #333; border-radius:8px; padding:1rem; margin-top:.5rem}
+    .geo-box {background:linear-gradient(145deg,#0a1a0a,#0d1a0d); border:1px solid #0f4; border-radius:10px; padding:1.2rem; margin:.5rem 0; animation:glow 3s infinite}
+    .geo-title {color:#0f8; font-weight:bold; font-size:.9rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:.5rem}
+    .rdc-grid {display:grid; grid-template-columns: repeat(2, 1fr); gap:.4rem; margin:.5rem 0}
+    .rdc-position-btn {background:#1a1a2e; border:1px solid #333; border-radius:6px; padding:.4rem .6rem; font-size:.75rem; color:#ccc; cursor:pointer; text-align:left; transition:all .2s}
+    .rdc-position-btn:hover {border-color:#4B8BFF; color:#fff; background:#1a1a3a}
 </style>
 """, unsafe_allow_html=True)
 
@@ -142,105 +178,134 @@ alert_type = st.segmented_control(
 st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
 
 # ========================================
-# GPS LOCALISATION - Robust multi-method
+# GPS LOCALISATION
 # ========================================
 st.markdown('<div class="slb">2. Localisation GPS</div>', unsafe_allow_html=True)
 
-# ---- METHOD 1: Server-side IP geolocation (most reliable on Streamlit Cloud) ----
-if st.button("🌐 LOCALISER PAR IP (SERVEUR)", type="secondary", use_container_width=True):
+# ---- METHOD 0: streamlit-geolocation (le plus fiable sur Streamlit Cloud) ----
+if GEOLOCATION_AVAILABLE:
+    st.markdown("<div class='geo-box'>", unsafe_allow_html=True)
+    st.markdown("<div class='geo-title'>📡 Géolocalisation GPS (Précise)</div>", unsafe_allow_html=True)
+    st.caption("Cliquez puis autorisez l'accès à votre position dans le navigateur")
+
+    loc_result = streamlit_geolocation()
+
+    if loc_result and isinstance(loc_result, dict) and loc_result.get("latitude"):
+        success = process_geolocation_result(loc_result)
+        if success:
+            st.success(f"✅ GPS: {st.session_state.gps_lat:.5f}, {st.session_state.gps_lon:.5f}")
+            time.sleep(0.5)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---- METHOD 1: IP Geolocation côté serveur (toujours fonctionnel) ----
+st.markdown("<div style='margin:.5rem 0'></div>", unsafe_allow_html=True)
+if st.button("🌐 LOCALISER PAR IP (Serveur)", type="secondary", use_container_width=True):
     with st.spinner("Recherche de position via IP..."):
+        location_found = False
+        # Service 1: ipapi.co
         try:
-            # Try multiple IP geolocation services
-            location_found = False
-            # Service 1: ipapi.co
+            resp = requests.get("https://ipapi.co/json/", timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("latitude") and data.get("longitude"):
+                    st.session_state.gps_lat = float(data["latitude"])
+                    st.session_state.gps_lon = float(data["longitude"])
+                    st.session_state.gps_loaded = True
+                    city = data.get("city", "inconnu")
+                    country = data.get("country_name", "")
+                    st.session_state.gps_source = f"IP: {city}, {country}"
+                    location_found = True
+                    st.success(f"✅ Position IP: {city}, {country}")
+        except Exception:
+            pass
+
+        # Service 2: ipinfo.io
+        if not location_found:
             try:
-                resp = requests.get("https://ipapi.co/json/", timeout=10, headers={"User-Agent": "MutuAlert/1.0"})
+                resp = requests.get("https://ipinfo.io/json", timeout=10)
                 if resp.status_code == 200:
                     data = resp.json()
-                    if data.get("latitude") and data.get("longitude"):
-                        st.session_state.gps_lat = float(data["latitude"])
-                        st.session_state.gps_lon = float(data["longitude"])
+                    loc = data.get("loc", "").split(",")
+                    if len(loc) == 2:
+                        st.session_state.gps_lat = float(loc[0])
+                        st.session_state.gps_lon = float(loc[1])
                         st.session_state.gps_loaded = True
-                        st.session_state.gps_source = f"ip-{data.get('city', 'unknown')}"
+                        city = data.get("city", "inconnu")
+                        st.session_state.gps_source = f"IP2: {city}"
                         location_found = True
-                        st.success(f"✅ Position trouvee: {data.get('city', '')}, {data.get('country_name', '')}")
-                        time.sleep(1)
-                        st.rerun()
+                        st.success(f"✅ Position IP: {city}")
             except Exception:
                 pass
 
-            # Service 2: ipinfo.io (fallback)
-            if not location_found:
-                try:
-                    resp = requests.get("https://ipinfo.io/json", timeout=10)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        loc = data.get("loc", "").split(",")
-                        if len(loc) == 2:
-                            st.session_state.gps_lat = float(loc[0])
-                            st.session_state.gps_lon = float(loc[1])
-                            st.session_state.gps_loaded = True
-                            st.session_state.gps_source = f"ip2-{data.get('city', 'unknown')}"
-                            location_found = True
-                            st.success(f"✅ Position trouvee: {data.get('city', '')}")
-                            time.sleep(1)
-                            st.rerun()
-                except Exception:
-                    pass
+        if not location_found:
+            st.error("❌ Localisation IP impossible. Choisissez une position dans la liste ou saisissez manuellement.")
 
-            if not location_found:
-                st.error("❌ Localisation IP impossible. Saisissez manuellement.")
-        except Exception as e:
-            st.error(f"❌ Erreur: {str(e)}")
+# ---- METHOD 2: Quick-Select Positions RDC ----
+st.markdown("<div style='margin:.5rem 0'></div>", unsafe_allow_html=True)
+with st.expander("📍 CHOISIR UNE POSITION PRÉDÉFINIE (RDC)", expanded=not st.session_state.gps_loaded):
+    st.caption("Sélectionnez votre ville/quartier si le GPS ne fonctionne pas")
 
-# ---- METHOD 2: JavaScript GPS (works on mobile/direct access) ----
-st.markdown("<div style='margin:.3rem 0'></div>", unsafe_allow_html=True)
-gps_html = """
-<div class="gb" id="gps-box">
-    <button onclick="getGPS()" style="background:linear-gradient(135deg,#1a237e,#283593);color:white;border:none;padding:.8rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:bold;cursor:pointer;width:100%;letter-spacing:1px;text-transform:uppercase">
-        📍 LOCALISER MA POSITION (GPS)
-    </button>
-    <div id="gps-out" style="margin-top:.8rem;font-family:monospace;font-size:.85rem;min-height:50px">
-        <span style="color:#666">Cliquez pour obtenir vos coordonnees GPS (fonctionne sur mobile)</span>
+    # Afficher en grille 3 colonnes
+    cols = st.columns(3)
+    col_idx = 0
+    for label, (lat, lon) in RDC_POSITIONS.items():
+        with cols[col_idx % 3]:
+            if st.button(label, key=f"rdc_{lat}_{lon}", use_container_width=True):
+                st.session_state.gps_lat = lat
+                st.session_state.gps_lon = lon
+                st.session_state.gps_loaded = True
+                st.session_state.gps_source = f"preset: {label}"
+                st.rerun()
+        col_idx += 1
+
+# ---- METHOD 3: JavaScript GPS (mobile/direct) ----
+with st.expander("📱 GPS NAVIGATEUR (Mobile/Direct)", expanded=False):
+    st.caption("Fonctionne mieux sur mobile ou en accès direct (hors iframe Streamlit Cloud)")
+    gps_html = """
+    <div class="gb" id="gps-box">
+        <button onclick="getGPS()" style="background:linear-gradient(135deg,#1a237e,#283593);color:white;border:none;padding:.8rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:bold;cursor:pointer;width:100%;letter-spacing:1px;text-transform:uppercase">
+            📍 ACTIVER LE GPS
+        </button>
+        <div id="gps-out" style="margin-top:.8rem;font-family:monospace;font-size:.85rem;min-height:50px">
+            <span style="color:#666">Cliquez pour obtenir vos coordonnees GPS</span>
+        </div>
     </div>
-</div>
-<script>
-function getGPS(){
-    var out=document.getElementById('gps-out');
-    out.innerHTML='<span style="color:#4B8BFF">▶ Acquisition GPS en cours...</span>';
-    if(!navigator.geolocation){
-        out.innerHTML='<span style="color:#f44">✗ Geolocalisation non supportee.<br>Utilisez le bouton IP SERVEUR ci-dessus.</span>';
-        return;
+    <script>
+    function getGPS(){
+        var out=document.getElementById('gps-out');
+        out.innerHTML='<span style="color:#4B8BFF">▶ Acquisition GPS en cours...</span>';
+        if(!navigator.geolocation){
+            out.innerHTML='<span style="color:#f44">✗ Geolocalisation non supportee par ce navigateur.</span>';
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            function(pos){
+                var lat=pos.coords.latitude.toFixed(6);
+                var lon=pos.coords.longitude.toFixed(6);
+                var acc=Math.round(pos.coords.accuracy);
+                out.innerHTML='<div style="color:#0f8;font-weight:bold">✓ GPS OK</div><div style="color:#ccc">LAT: '+lat+' | LON: '+lon+'</div><div style="color:#888;font-size:.75rem">Precision: ±'+acc+'m</div><div style="color:#f80;font-size:.8rem;margin-top:.5px">⚠ Copiez ces coordonnees dans les champs manuels ci-dessous</div>';
+            },
+            function(err){
+                var msg='Erreur: ';
+                if(err.code==1)msg+='Permission refusee.';
+                else if(err.code==2)msg+='Position indisponible.';
+                else msg+='Delai depasse.';
+                out.innerHTML='<span style="color:#f44">✗ '+msg+' Utilisez la localisation IP ou les positions predefinies.</span>';
+            },
+            {enableHighAccuracy:true,timeout:15000,maximumAge:0}
+        );
     }
-    navigator.geolocation.getCurrentPosition(
-        function(pos){
-            var lat=pos.coords.latitude.toFixed(6);
-            var lon=pos.coords.longitude.toFixed(6);
-            var acc=Math.round(pos.coords.accuracy);
-            out.innerHTML='<span style="color:#0f8">✓ GPS OK</span><br><span style="color:#ccc">LAT: '+lat+' | LON: '+lon+' | +/-'+acc+'m</span><br><span style="color:#4B8BFF">Chargement...</span>';
-            var url=new URL(window.location.href);
-            url.searchParams.set('lat',lat);
-            url.searchParams.set('lon',lon);
-            url.searchParams.set('src','gps');
-            window.location.href=url.toString();
-        },
-        function(err){
-            var msg='Erreur GPS: ';
-            if(err.code==1)msg+='Permission refusee. Utilisez le bouton IP SERVEUR.';
-            else if(err.code==2)msg+='Signal indisponible.';
-            else msg+='Delai depasse.';
-            out.innerHTML='<span style="color:#f80">⚠ '+msg+'</span>';
-        },
-        {enableHighAccuracy:true,timeout:15000,maximumAge:0}
-    );
-}
-</script>
-"""
-st.components.v1.html(gps_html, height=150)
+    </script>
+    """
+    st.components.v1.html(gps_html, height=180)
 
 # ========================================
 # GPS STATUS & RESET
 # ========================================
+lat_val = float(st.session_state.gps_lat)
+lon_val = float(st.session_state.gps_lon)
+
 c1, c2 = st.columns(2)
 with c1:
     if st.session_state.gps_loaded and abs(lat_val) > 0.001:
@@ -252,17 +317,17 @@ with c1:
         )
     else:
         st.markdown(
-            '<div class="gps-warn">⚠ Aucune position. Cliquez sur LOCALISER PAR IP (SERVEUR) ou saisissez manuellement.</div>',
+            '<div class="gps-warn">⚠ Aucune position. Choisissez une methode ci-dessus.</div>',
             unsafe_allow_html=True,
         )
 
 with c2:
     if st.button("🔄 Reset / Rafraichir", use_container_width=True):
-        st.query_params.clear()
         st.session_state.gps_lat = 0.0
         st.session_state.gps_lon = 0.0
         st.session_state.gps_loaded = False
         st.session_state.gps_source = ""
+        st.session_state.geolocation_used = False
         st.rerun()
 
 # ========================================
@@ -270,7 +335,7 @@ with c2:
 # ========================================
 st.markdown(
     "<div class='manual-box'><p style='color:#888;font-size:.8rem;margin:0 0 .5rem 0'>"
-    "📝 Si les methodes automatiques echouent, saisissez manuellement :</p></div>",
+    "📝 Saisie manuelle (copiez les coordonnees GPS ici) :</p></div>",
     unsafe_allow_html=True,
 )
 c1, c2 = st.columns(2)
@@ -323,7 +388,7 @@ st.markdown("""
 
 if st.button("ALERTE\nURGENCE", key="big_red_btn", type="primary", disabled=not has_valid):
     if not has_valid:
-        st.error("❌ Coordonnees invalides ou vides. Localisez-vous ou saisissez les coordonnees.")
+        st.error("❌ Coordonnees invalides. Choisissez une position ou saisissez les coordonnees.")
     else:
         with st.spinner("TRANSMISSION EN COURS..."):
             try:
@@ -365,11 +430,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if not has_valid:
-    st.warning("⚠️ Localisez-vous (bouton IP SERVEUR en haut) ou saisissez les coordonnees GPS manuellement.")
+    st.warning("⚠️ Choisissez une position GPS, une ville predefinie, ou saisissez manuellement.")
 
 # ========================================
 # SUCCESS
 # ========================================
+station = get_default_station()
+station_name = station["name"] if station is not None else "Police"
+
 if st.session_state.alert_sent:
     st.balloons()
     st.markdown(f"""
@@ -388,16 +456,15 @@ if st.session_state.alert_sent:
         st.switch_page("pages/trajet.py")
 
     if st.button("NOUVELLE ALERTE", type="secondary"):
-        for k in ["alert_sent", "alert_id", "alert_lat", "alert_lon", "gps_lat", "gps_lon", "gps_loaded", "gps_source"]:
+        for k in ["alert_sent", "alert_id", "alert_lat", "alert_lon", "gps_lat", "gps_lon", "gps_loaded", "gps_source", "geolocation_used"]:
             if k in ("gps_lat", "gps_lon", "alert_lat", "alert_lon"):
                 st.session_state[k] = 0.0
-            elif k in ("alert_sent", "gps_loaded"):
+            elif k in ("alert_sent", "gps_loaded", "geolocation_used"):
                 st.session_state[k] = False
             elif k == "gps_source":
                 st.session_state[k] = ""
             else:
                 st.session_state[k] = None
-        st.query_params.clear()
         st.rerun()
 
 st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)

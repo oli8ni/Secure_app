@@ -44,7 +44,7 @@ from app.modules.database import (
 )
 from app.modules.auth import authenticate_user
 from app.modules.geo import validate_coordinates
-from app.modules.routing import get_route, get_osrm_route_cached
+from app.modules.routing import get_route, get_routes
 from app.modules.alerts import get_alert_color, get_alert_label, format_time_ago
 from streamlit_folium import st_folium
 
@@ -154,6 +154,10 @@ with col_f1:
         default="all",
         label_visibility="collapsed",
     )
+with col_f2:
+    if st.button("🔄 ACTUALISER", use_container_width=True):
+        st.toast("Carte actualisee!")
+        st.rerun()
 with col_f3:
     if st.button("🚪 DECONNEXION", use_container_width=True):
         st.session_state.police_user = None
@@ -349,6 +353,26 @@ with tab_map:
             tiles="CartoDB dark_matter",
         )
 
+        # === CSS CLIGNOTANT INJECTÉ DANS LA CARTE ===
+        blink_css = """
+        <style>
+        @keyframes pulse-alert {
+            0% { opacity: 0.4; r: 8; stroke-width: 2; }
+            50% { opacity: 1; r: 14; stroke-width: 4; }
+            100% { opacity: 0.4; r: 8; stroke-width: 2; }
+        }
+        @keyframes pulse-ring {
+            0% { r: 20; opacity: 0.6; }
+            50% { r: 50; opacity: 0; }
+            100% { r: 20; opacity: 0; }
+        }
+        .alert-marker { animation: pulse-alert 1.5s infinite; }
+        .alert-ring { animation: pulse-ring 2s infinite; }
+        .alert-marker-zoomed { animation: pulse-alert 0.8s infinite; }
+        </style>
+        """
+        m.get_root().html.add_child(folium.Element(blink_css))
+
         # Active station
         folium.Marker(
             [police_lat, police_lon],
@@ -374,7 +398,7 @@ with tab_map:
                 tooltip=f"🏥 {hos['name']}",
             ).add_to(m)
 
-        # Alert markers
+        # Alert markers with BLINKING animation
         for idx, alert in df_alerts.iterrows():
             color = get_alert_color(alert["alert_type"])
             label = get_alert_label(alert["alert_type"])
@@ -383,22 +407,31 @@ with tab_map:
             is_zoomed = st.session_state.zoom_to == alert["id"]
 
             if status == "active":
+                # Pulsing red circles (blinking animation via CSS class)
+                circle_class = "alert-marker-zoomed" if is_zoomed else "alert-marker"
+                svg_circle = f'''<circle cx="{lon}" cy="{lat}" r="12" fill="#FF0000" stroke="#FF4444" stroke-width="2" class="{circle_class}" />'''
+
                 folium.CircleMarker(
                     [lat, lon],
-                    radius=10,
+                    radius=12 if is_zoomed else 8,
                     fill=True,
                     color="#FF0000",
                     fill_color="#FF0000",
                     fill_opacity=0.6,
+                    className=circle_class,
                 ).add_to(m)
+
+                # Pulsing ring effect
                 folium.Circle(
                     [lat, lon],
-                    radius=80,
+                    radius=80 if is_zoomed else 60,
                     fill=True,
                     color="#FF0000",
                     fill_color="#FF0000",
-                    fill_opacity=0.3 if is_zoomed else 0.15,
+                    fill_opacity=0.2 if is_zoomed else 0.1,
+                    weight=2,
                 ).add_to(m)
+
                 if is_zoomed:
                     folium.Circle(
                         [lat, lon],
@@ -406,8 +439,10 @@ with tab_map:
                         fill=True,
                         color="#FF0000",
                         fill_color="#FF0000",
-                        fill_opacity=0.15,
+                        fill_opacity=0.1,
+                        weight=2,
                     ).add_to(m)
+
                 folium.Marker(
                     [lat, lon],
                     icon=folium.Icon(color="red", icon="exclamation", prefix="fa"),
@@ -415,7 +450,7 @@ with tab_map:
                         f"""<div style="font-family:sans-serif;min-width:200px;color:#fff;background:#111;padding:10px;border-radius:6px;border-left:3px solid {color}">
                         <h4 style="color:{color};margin:0;font-size:1rem">🚨 {label} #{alert['id']}</h4>
                         <hr style="border-color:#333;margin:6px 0">
-                        <p style="margin:4px 0;font-size:.8rem;color:#ccc"><b style="color:#fff">Status:</b> <span style="color:#f00;font-weight:bold">ACTIVE</span></p>
+                        <p style="margin:4px 0;font-size:.8rem;color:#ccc"><b style="color:#fff">Status:</b> <span style="color:#f00;font-weight:bold">● ACTIVE</span></p>
                         <p style="margin:4px 0;font-size:.8rem;color:#ccc"><b style="color:#fff">Heure:</b> {alert['created_at']}</p>
                         <p style="margin:4px 0;font-size:.8rem;color:#ccc"><b style="color:#fff">Desc:</b> {str(alert['description']) if alert['description'] else 'N/A'}</p>
                         <p style="margin:4px 0;font-size:.8rem;color:#ccc"><b style="color:#fff">Tel:</b> {alert['phone'] or 'Anonyme'}</p></div>""",
@@ -443,12 +478,18 @@ with tab_map:
                     tooltip=f"🟢 #{alert['id']} Resolu",
                 ).add_to(m)
 
-        # OSRM routes from selected station to active alerts (cached)
+        # OSRM routes from selected station to active alerts
         active_alerts = df_alerts[df_alerts["status"] == "active"]
         for idx, alert in active_alerts.iterrows():
-            route_pts, dist_km, dur_min = get_route(police_lat, police_lon, alert["latitude"], alert["longitude"], use_cache=True)
-            if route_pts:
-                folium.PolyLine(route_pts, color="#FF0000", weight=3, opacity=0.5, dash_array="5,10").add_to(m)
+            route_list = get_routes(police_lat, police_lon, alert["latitude"], alert["longitude"])
+            for route in route_list:
+                folium.PolyLine(
+                    route["points"],
+                    color=route["color"],
+                    weight=2,
+                    opacity=0.4,
+                    dash_array="5,10",
+                ).add_to(m)
 
         st_folium(m, width=700, height=550, returned_objects=[])
 
